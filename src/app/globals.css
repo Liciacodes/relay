@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+/* Design tokens: the whole palette lives here. The waveform canvas reads these too. */
+:root {
+  --ink: #10161d; /* background: deep slate, calmer than black */
+  --panel: #161e27; /* raised surfaces */
+  --line: #26313d; /* hairlines, resting waveform */
+  --text: #d7dee6; /* main text */
+  --muted: #8a96a3; /* secondary text (AA contrast on --ink) */
+  --signal: #9cc4e4; /* the one accent: live audio */
+  --ember: #e8a88a; /* errors: warm, not alarming */
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  color-scheme: dark;
+}
+
+/* Expose the tokens to Tailwind, so classes like bg-ink and text-muted work. */
+@theme inline {
+  --color-ink: var(--ink);
+  --color-panel: var(--panel);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-signal: var(--signal);
+  --color-ember: var(--ember);
+  --font-sans: var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-newsreader), ui-serif, Georgia, serif;
+}
+
+body {
+  background: var(--ink);
+}
+
+::selection {
+  background: color-mix(in oklab, var(--signal) 35%, transparent);
+}
+
+/* Component styles live in a layer, so Tailwind utilities can still override them. */
+@layer components {
+  /* ---------- Hold-to-talk button ---------- */
+
+  .talk-button {
+    background: var(--panel);
+    border-color: var(--line);
+    color: var(--text);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    /* Only these properties animate. Colours shift gently; the press is quick. */
+    transition:
+      transform 140ms var(--ease-out),
+      background-color 180ms ease,
+      border-color 180ms ease,
+      color 180ms ease;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .talk-button:hover {
+      border-color: color-mix(in oklab, var(--signal) 40%, var(--line));
+    }
+  }
+
+  /* Physical press feedback for mouse/touch. Space presses get the colour change only. */
+  .talk-button:active {
+    transform: scale(0.97);
+  }
+
+  .talk-button:focus-visible {
+    outline: 2px solid var(--signal);
+    outline-offset: 3px;
+  }
+
+  .talk-button[data-mode="recording"] {
+    background: color-mix(in oklab, var(--signal) 16%, var(--panel));
+    border-color: var(--signal);
+  }
+
+  .talk-button[aria-disabled="true"] {
+    color: var(--muted);
+    cursor: progress;
+  }
+
+  .talk-dot {
+    background: var(--muted);
+    transition: background-color 180ms ease;
+  }
+
+  .talk-button[data-mode="recording"] .talk-dot {
+    background: var(--signal);
+  }
+
+  /* ---------- Orb stage ---------- */
+
+  .orb-ring {
+    border: 1px solid var(--line);
+    background: radial-gradient(circle at 50% 50%, color-mix(in oklab, var(--signal) 6%, transparent), transparent 70%);
+    transition:
+      border-color 240ms ease,
+      opacity 240ms ease;
+  }
+
+  .orb-ring[data-live="true"] {
+    border-color: color-mix(in oklab, var(--signal) 45%, var(--line));
+  }
+
+  /* ---------- Transcript ---------- */
+
+  /* Each new transcript fades in once (it's a new element, see key= in Transcript.tsx).
+     fill-mode "backwards" lets go of opacity afterwards, so the dimming rule still works. */
+  .transcript {
+    animation: transcript-in 260ms var(--ease-out) backwards;
+    transition: opacity 200ms ease;
+  }
+
+  /* Dimmed while the next transcript is being made. */
+  .transcript[data-stale="true"] {
+    opacity: 0.45;
+  }
+
+  @keyframes transcript-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+
+  /* Reduced motion: keep the fades, drop the movement. */
+  @media (prefers-reduced-motion: reduce) {
+    .talk-button:active {
+      transform: none;
+    }
+    .transcript {
+      animation-name: transcript-fade;
+    }
+  }
+
+  @keyframes transcript-fade {
+    from {
+      opacity: 0;
+    }
+  }
+}
