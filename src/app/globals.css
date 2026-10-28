@@ -123,6 +123,18 @@ body {
     }
   }
 
+  /* ---------- Reply ---------- */
+
+  /* No per-word animation: the text changes many times a second, so motion would be noise. */
+  .reply {
+    transition: opacity 200ms ease;
+  }
+
+  /* Dimmed with the transcript while your next question is being transcribed. */
+  .reply[data-stale="true"] {
+    opacity: 0.45;
+  }
+
   /* Reduced motion: keep the fades, drop the movement. */
   @media (prefers-reduced-motion: reduce) {
     .talk-button:active {

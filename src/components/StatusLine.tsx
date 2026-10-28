@@ -34,6 +34,10 @@ function message(state: VoiceState): string {
       return "Listening.";
     case "transcribing":
       return state.autoStopped ? "Stopped at 60 seconds. Transcribing." : "Transcribing.";
+    case "thinking":
+      return state.autoStopped ? "Stopped at 60 seconds. Thinking." : "Thinking.";
+    case "speaking":
+      return "Speaking.";
     case "done":
       return state.autoStopped ? "Stopped at 60 seconds." : "";
     case "error":
@@ -45,17 +49,27 @@ function message(state: VoiceState): string {
  * One line that always says what's happening. role="status" makes screen readers
  * announce changes politely, without interrupting.
  */
-export function StatusLine({ state, limitMs }: { state: VoiceState; limitMs: number }) {
+export function StatusLine({
+  state,
+  limitMs,
+  note,
+}: {
+  state: VoiceState;
+  limitMs: number;
+  /** A secondary line, e.g. "Using your browser's voice for now." */
+  note?: string | null;
+}) {
   const isError = state.status === "error";
   return (
     <p
       role="status"
       aria-live="polite"
       data-tone={isError ? "error" : "calm"}
-      className="flex min-h-6 flex-wrap items-baseline justify-center gap-x-3 text-center text-sm text-muted data-[tone=error]:text-ember"
+      className="flex min-h-6 max-w-136 flex-wrap items-baseline justify-center gap-x-3 gap-y-1 text-center text-sm text-muted data-[tone=error]:text-ember"
     >
       <span>{message(state)}</span>
       {state.status === "recording" && <Elapsed startedAt={state.startedAt} limitMs={limitMs} />}
+      {note && <span className="basis-full text-xs text-muted">{note}</span>}
     </p>
   );
 }

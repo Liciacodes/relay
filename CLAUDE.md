@@ -15,8 +15,9 @@ the files touched. Prefer small, readable code over clever code. Introduce new c
 
 - **Day 1 (done): voice input.** Hold to talk (button or Space), live waveform,
   Groq Whisper transcription, clear states and errors.
-- **Day 2: voice output.** Streaming replies and spoken answers; the orb reacts to audio.
-- Days 3–6: GitHub data, evidence for each claim, briefing flow, polish.
+- **Day 2 (done): voice output.** Streamed replies (Groq `openai/gpt-oss-20b`), spoken by
+  Groq Orpheus with a browser-voice fallback, audio-reactive orb, short conversation memory.
+- Day 3: GitHub tools. Day 4: evidence for each claim. Day 5: interruption. Day 6: polish.
 
 ## Stack
 
@@ -26,23 +27,39 @@ Note: with Cache Components, route files must not export `runtime`.
 
 ## Folder map
 
-- `src/app/api/transcribe/route.ts`: server route; gets audio, calls Groq, returns `{ text }` or `{ error }`.
+- `src/app/api/`: server routes. All failures return `{ error: { code, message } }`.
+  - `transcribe/`: audio → `{ text }` (Whisper).
+  - `reply/`: `{ text, history }` → **streamed plain text** (chat model).
+  - `speak/`: `{ text }` (≤ 200 chars) → `audio/wav` (Orpheus).
 - `src/lib/server/`: server-only code (imports `server-only`). Secrets are used only here.
+  `groq.ts` (all Groq calls, model IDs, system prompt, SSE parsing, WAV header fix),
+  `respond.ts` (`fail()`, `requireApiKey()`, `groqFailure()` error mapping).
 - `src/lib/audio/`: browser audio building blocks, no React:
-  `mic.ts` (permission and errors), `recorder.ts` (MediaRecorder), `analyser.ts`
-  (live levels, i.e. a `LevelSource`), `errors.ts` (error codes and messages), `types.ts`.
-- `src/lib/transcribe.ts`: browser call to `/api/transcribe`.
-- `src/hooks/`: `useVoiceCapture` (the state machine), `usePushToTalk` (hold input),
-  `useReducedMotion`.
-- `src/components/`: UI. `Waveform` draws on a canvas from a ref (no React re-renders).
-  `OrbStage` is the placeholder for Day 2's orb.
+  `mic.ts`, `recorder.ts`, `analyser.ts` (`levelSourceFrom` → a `LevelSource`),
+  `player.ts` (gapless playback on one AudioContext, unlocked on press),
+  `errors.ts` (error codes, messages, `errorFromResponse`), `types.ts`.
+- `src/lib/speech/`: `chunker.ts` (first sentence alone, then ≤ 200-char packs),
+  `speaker.ts` (fetches + plays chunks in order, falls back to the browser voice),
+  `browserVoice.ts` (speechSynthesis + simulated levels).
+- `src/lib/transcribe.ts`, `src/lib/reply.ts`: browser calls to the routes.
+- `src/hooks/`: `useConversation` (the whole loop / state machine), `usePushToTalk`
+  (hold input), `useReducedMotion`.
+- `src/components/`: UI. `Waveform` (mic) and `Orb` (Relay's voice) draw on canvases from
+  refs (no React re-renders). `Reply` shows the streaming answer.
 
 ## Rules
 
 - **Secrets stay server-side.** Never prefix a secret with `NEXT_PUBLIC_`; never import
   `src/lib/server/*` from a client component.
-- Voice states: `idle → requesting → recording → transcribing → done | error`.
-  Add new states to `VoiceState` in `src/lib/audio/types.ts`.
+- Voice states: `idle → requesting → recording → transcribing → thinking → speaking → done | error`.
+  Add new states to `VoiceState` in `src/lib/audio/types.ts`. Presses are ignored while
+  transcribing/thinking/speaking (interruption is Day 5).
+- Groq limits are tight (Orpheus may allow ~100 requests/day): keep the chunker's packing,
+  and mock `/api/reply` and `/api/speak` in tests unless real calls are needed.
+- Orpheus needs its terms accepted once in the Groq console; until then speech falls back
+  to the browser voice (`model_terms_required`).
+- Model IDs live only in `src/lib/server/groq.ts`. Groq retires models often; check
+  `GET https://api.groq.com/openai/v1/models` before changing them.
 - Space is handled only by the window listener in `usePushToTalk`; the button has no `onClick`.
 - Recording auto-stops at 60s (`MAX_RECORDING_MS`) and transcribes what was captured.
 - Respect `prefers-reduced-motion`; animate only transform and opacity; UI motion < 300ms.

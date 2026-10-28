@@ -1,16 +1,18 @@
 import type { VoiceError } from "./errors";
 
-// The voice capture state machine. Exactly one of these is true at a time.
-// Day 2 adds "thinking" and "speaking" here.
+// The conversation state machine. Exactly one of these is true at a time.
+// `autoStopped` remembers that recording hit the 60-second limit.
 export type VoiceState =
   | { status: "idle"; note?: string }
   | { status: "requesting" } // waiting for the mic permission prompt
   | { status: "recording"; startedAt: number }
   | { status: "transcribing"; autoStopped: boolean }
-  | { status: "done"; text: string; autoStopped: boolean }
+  | { status: "thinking"; autoStopped: boolean } // reply requested, no voice yet
+  | { status: "speaking" } // Relay's voice is playing
+  | { status: "done"; autoStopped: boolean }
   | { status: "error"; error: VoiceError };
 
-/** Anything that can report live audio levels: the mic today, Relay's voice on Day 2. */
+/** Anything that can report live audio levels: the mic, or Relay's voice. */
 export interface LevelSource {
   /** Number of samples readWaveform fills. */
   readonly size: number;
@@ -24,4 +26,10 @@ export interface LevelSource {
 export interface Recording {
   blob: Blob;
   durationMs: number;
+}
+
+/** One message in the short conversation memory sent with each question. */
+export interface Turn {
+  role: "user" | "assistant";
+  content: string;
 }

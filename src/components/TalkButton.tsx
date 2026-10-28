@@ -2,17 +2,19 @@
 
 import type { ComponentProps } from "react";
 
-type Mode = "ready" | "starting" | "recording" | "busy";
+export type TalkMode = "ready" | "starting" | "recording" | "transcribing" | "thinking" | "speaking";
 
-const LABELS: Record<Mode, string> = {
+const LABELS: Record<TalkMode, string> = {
   ready: "Hold to talk",
   starting: "Opening mic…",
   recording: "Release to send",
-  busy: "Transcribing…",
+  transcribing: "Transcribing…",
+  thinking: "Thinking…",
+  speaking: "Speaking…",
 };
 
 interface Props extends Omit<ComponentProps<"button">, "children"> {
-  mode: Mode;
+  mode: TalkMode;
   hintId: string;
 }
 
@@ -21,13 +23,13 @@ interface Props extends Omit<ComponentProps<"button">, "children"> {
  * pointer/keyboard handlers passed in by usePushToTalk.
  */
 export function TalkButton({ mode, hintId, ...handlers }: Props) {
-  const recording = mode === "recording";
+  const busy = mode === "transcribing" || mode === "thinking" || mode === "speaking";
   return (
     <button
       type="button"
       {...handlers}
-      aria-pressed={recording}
-      aria-disabled={mode === "busy"}
+      aria-pressed={mode === "recording"}
+      aria-disabled={busy}
       aria-describedby={hintId}
       data-mode={mode}
       className="talk-button group relative flex h-14 min-w-56 touch-none items-center justify-center gap-3 rounded-full border px-7 text-[15px] font-medium select-none"

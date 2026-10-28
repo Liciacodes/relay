@@ -4,7 +4,7 @@
  */
 export function Transcript({ text, stale }: { text: string | null; stale: boolean }) {
   return (
-    <section aria-label="Transcript" aria-live="polite" aria-busy={stale} className="min-h-24 w-full max-w-136 text-center">
+    <section aria-label="Transcript" aria-live="polite" aria-busy={stale} className="min-h-14 w-full max-w-136 text-center">
       {text ? (
         <blockquote
           key={text} // new text = new element, so its entrance plays each time

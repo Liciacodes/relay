@@ -43,3 +43,5 @@ next-env.d.ts
 
 # playwright test screenshots
 /.playwright-mcp
+
+LEARNED.md
