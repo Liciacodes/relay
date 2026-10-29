@@ -11,6 +11,8 @@ export type VoiceErrorCode =
   | "rate-limited" // Groq said "too many requests"
   | "reply-failed" // the answer couldn't be generated or was cut off
   | "speech-failed" // neither Groq's voice nor the browser's could speak
+  | "github-token" // GITHUB_TOKEN is missing or GitHub rejected it
+  | "github-rate-limited" // GitHub said "too many requests"
   | "server"; // anything else that went wrong on our server
 
 const MESSAGES: Record<VoiceErrorCode, string> = {
@@ -25,6 +27,8 @@ const MESSAGES: Record<VoiceErrorCode, string> = {
   "rate-limited": "Groq's usage limit was reached. Try again in a minute.",
   "reply-failed": "Couldn't get an answer. Try again.",
   "speech-failed": "Couldn't speak the answer. It's shown on screen.",
+  "github-token": "GitHub rejected the token. Check GITHUB_TOKEN in .env.local.",
+  "github-rate-limited": "GitHub's usage limit was reached. Try again in a few minutes.",
   server: "Something went wrong on the server. Try again in a moment.",
 };
 

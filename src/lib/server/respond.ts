@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { ApiError, VoiceErrorCode } from "@/lib/audio/errors";
+import { GitHubError } from "./github";
 import { GroqError } from "./groq";
 
 /** Send our standard `{ error: { code, message } }` JSON with an HTTP status. */
@@ -22,6 +23,32 @@ export function requireApiKey(): { apiKey: string } | { response: Response } {
   return {
     response: fail(500, "server", "GROQ_API_KEY is missing. Add it to .env.local and restart the dev server."),
   };
+}
+
+/** Turn a failed answer (GitHub or Groq) into a clear response for /api/reply. */
+export function replyFailure(error: unknown): Response {
+  if (!(error instanceof GitHubError)) return groqFailure(error, "reply-failed", "reply");
+
+  console.error("[reply] GitHub:", error.message); // the token is never part of the message
+  if (error.kind === "token") {
+    // Missing token: say how to add it (status 0 = GitHub was never asked). Rejected: say so.
+    const missing = error.status === 0;
+    return fail(
+      502,
+      "github-token",
+      missing ? error.message : "GitHub rejected the token. Check GITHUB_TOKEN in .env.local.",
+    );
+  }
+  if (error.kind === "rate-limited") {
+    const minutes = error.retryMinutes ?? 1;
+    return fail(
+      429,
+      "github-rate-limited",
+      `GitHub's usage limit was reached. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+      { "Retry-After": String(minutes * 60) },
+    );
+  }
+  return fail(502, "reply-failed", "Couldn't reach GitHub. Try again.");
 }
 
 /**

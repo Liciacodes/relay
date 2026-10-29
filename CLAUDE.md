@@ -17,7 +17,10 @@ the files touched. Prefer small, readable code over clever code. Introduce new c
   Groq Whisper transcription, clear states and errors.
 - **Day 2 (done): voice output.** Streamed replies (Groq `openai/gpt-oss-20b`), spoken by
   Groq Orpheus with a browser-voice fallback, audio-reactive orb, short conversation memory.
-- Day 3: GitHub tools. Day 4: evidence for each claim. Day 5: interruption. Day 6: polish.
+- **Day 3 (done): GitHub tools.** The model calls read-only tools (repos, commits, PRs,
+  issues) that run on the server; Relay only answers about the user's GitHub work.
+  `open_issues` is the user's own exercise: leave it for them unless asked.
+- Day 4: evidence for each claim. Day 5: interruption. Day 6: polish.
 
 ## Stack
 
@@ -29,11 +32,16 @@ Note: with Cache Components, route files must not export `runtime`.
 
 - `src/app/api/`: server routes. All failures return `{ error: { code, message } }`.
   - `transcribe/`: audio → `{ text }` (Whisper).
-  - `reply/`: `{ text, history }` → **streamed plain text** (chat model).
+  - `reply/`: `{ text, history }` → **streamed plain text** (chat model + tools). It waits
+    for the first word before responding, so tool/GitHub errors still come back as JSON.
   - `speak/`: `{ text }` (≤ 200 chars) → `audio/wav` (Orpheus).
 - `src/lib/server/`: server-only code (imports `server-only`). Secrets are used only here.
-  `groq.ts` (all Groq calls, model IDs, system prompt, SSE parsing, WAV header fix),
-  `respond.ts` (`fail()`, `requireApiKey()`, `groqFailure()` error mapping).
+  `groq.ts` (all Groq calls, model IDs, system prompt, SSE parsing incl. tool-call pieces,
+  WAV header fix), `answer.ts` (the tool loop: async generator, ≤ 4 rounds, last one
+  `tool_choice: "none"`), `github.ts` (`githubGet` GET-only, `GitHubError`, `repoPath`,
+  `short`, `clampLimit`), `tools/` (one file per tool exporting `{ definition, run }`,
+  `index.ts` = `TOOLS` + `runTool`), `respond.ts` (`fail()`, `requireApiKey()`,
+  `replyFailure()`, `groqFailure()` error mapping).
 - `src/lib/audio/`: browser audio building blocks, no React:
   `mic.ts`, `recorder.ts`, `analyser.ts` (`levelSourceFrom` → a `LevelSource`),
   `player.ts` (gapless playback on one AudioContext, unlocked on press),
@@ -58,6 +66,12 @@ Note: with Cache Components, route files must not export `runtime`.
   and mock `/api/reply` and `/api/speak` in tests unless real calls are needed.
 - Orpheus needs its terms accepted once in the Groq console; until then speech falls back
   to the browser voice (`model_terms_required`).
+- GitHub access is **read-only**: `githubGet` only makes GET requests; keep it that way.
+  Tool results stay small (≤ 20 items, text cut by `short()`) and every item has a `url`
+  (Day 4's evidence). Mistakes the model can fix (bad input, repo not found) go back to it
+  as `{ error }`; token/rate-limit/outage errors are thrown and shown to the user.
+- gpt-oss makes one tool call at a time (no parallel calls). Temperature stays ≤ 0.5.
+- Watch `[tool] …` lines in the dev terminal to see what the model asked for.
 - Model IDs live only in `src/lib/server/groq.ts`. Groq retires models often; check
   `GET https://api.groq.com/openai/v1/models` before changing them.
 - Space is handled only by the window listener in `usePushToTalk`; the button has no `onClick`.
@@ -68,7 +82,7 @@ Note: with Cache Components, route files must not export `runtime`.
 ## Running
 
 ```
-cp .env.local.example .env.local   # then add GROQ_API_KEY
+cp .env.local.example .env.local   # then add GROQ_API_KEY and a read-only GITHUB_TOKEN
 npm run dev                        # http://localhost:3000
 npm run lint && npx tsc --noEmit   # checks
 ```

@@ -1,7 +1,7 @@
 import { VoiceError, errorFromResponse } from "./audio/errors";
 import type { Turn } from "./audio/types";
 
-const TIMEOUT_MS = 45_000;
+const TIMEOUT_MS = 60_000; // tool rounds (GitHub lookups) add a few seconds
 
 /**
  * Browser side: ask /api/reply for an answer and receive it as it's written.
