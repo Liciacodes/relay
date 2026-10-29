@@ -11,7 +11,7 @@ export function Reply({ text, streaming, stale }: { text: string | null; streami
       aria-label="Relay's answer"
       aria-live="polite"
       aria-busy={streaming}
-      className="min-h-16 w-full max-w-136 text-center"
+      className="min-h-16 w-full max-w-136 text-left" // same width as the cards: one block
     >
       {text && (
         <p

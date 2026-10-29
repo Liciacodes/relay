@@ -31,6 +31,12 @@ body {
   background: var(--ink);
 }
 
+/* The talk controls are sticky at the bottom. When Tab moves focus to a card, the browser
+   scrolls it into view: this keeps it above the controls instead of underneath them. */
+html {
+  scroll-padding-bottom: 12rem;
+}
+
 ::selection {
   background: color-mix(in oklab, var(--signal) 35%, transparent);
 }
@@ -135,12 +141,49 @@ body {
     opacity: 0.45;
   }
 
+  /* ---------- Timeline and evidence ---------- */
+
+  .timeline,
+  .evidence {
+    transition: opacity 200ms ease;
+  }
+
+  /* Dimmed with the rest of the turn while your next question is being transcribed. */
+  .timeline[data-stale="true"],
+  .evidence[data-stale="true"] {
+    opacity: 0.45;
+  }
+
+  /* A hairline between steps: they're a sequence, read left to right. */
+  .timeline-step + .timeline-step::before {
+    content: "";
+    align-self: center;
+    width: 0.75rem;
+    height: 1px;
+    margin-right: 0.375rem;
+    background: var(--line);
+  }
+
+  /* Cards arrive one after another: fade + 6px rise, 50ms apart (--i is the card's index). */
+  .evidence-item {
+    animation: evidence-in 220ms var(--ease-out) backwards;
+    animation-delay: calc(var(--i, 0) * 50ms);
+  }
+
+  @keyframes evidence-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
   /* Reduced motion: keep the fades, drop the movement. */
   @media (prefers-reduced-motion: reduce) {
     .talk-button:active {
       transform: none;
     }
-    .transcript {
+    .transcript,
+    .evidence-item {
       animation-name: transcript-fade;
     }
   }

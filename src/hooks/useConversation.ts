@@ -7,6 +7,7 @@ import { releaseMic, requestMic } from "@/lib/audio/mic";
 import { createAudioPlayer, type AudioPlayer } from "@/lib/audio/player";
 import { startRecorder, type Recorder } from "@/lib/audio/recorder";
 import type { LevelSource, Turn, VoiceState } from "@/lib/audio/types";
+import type { Evidence, TimelineStep } from "@/lib/evidence";
 import { streamReply } from "@/lib/reply";
 import { createSpeechChunker } from "@/lib/speech/chunker";
 import { createSpeaker } from "@/lib/speech/speaker";
@@ -70,6 +71,10 @@ export function useConversation() {
   const [reply, setReply] = useState<string | null>(null);
   /** Shown when the browser's voice had to stand in for Groq's. */
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
+  /** What Relay did this turn, with real measured times. */
+  const [steps, setSteps] = useState<TimelineStep[]>([]);
+  /** The GitHub items behind this answer (at most 6). */
+  const [evidence, setEvidence] = useState<Evidence[]>([]);
 
   const phase = useRef<Phase>("idle");
   const releasedWhileStarting = useRef(false);
@@ -91,14 +96,30 @@ export function useConversation() {
     micLevelsRef.current = null;
   }, []);
 
-  /** Get an answer for `question`, showing and speaking it as it streams in. */
-  const respond = useCallback(async (question: string, autoStopped: boolean) => {
+  /**
+   * Get an answer for `question`, showing and speaking it as it streams in.
+   * `releasedAt` is when you let go (performance.now()); milestones are timed from it.
+   */
+  const respond = useCallback(async (question: string, autoStopped: boolean, releasedAt: number) => {
+    const milestone = (label: string): TimelineStep => ({
+      kind: "milestone",
+      label,
+      ms: performance.now() - releasedAt,
+      ok: true,
+    });
+    const addStep = (step: TimelineStep) => setSteps((current) => [...current, step]);
+
     dispatch({ type: "think", autoStopped });
     setReply("");
     setVoiceNote(null);
+    setSteps([milestone("Heard you")]); // the transcript just arrived
+    setEvidence([]);
 
     const speaker = createSpeaker(player.current!, {
-      onFirstAudio: () => dispatch({ type: "speak" }),
+      onFirstAudio: () => {
+        addStep(milestone("Started speaking"));
+        dispatch({ type: "speak" });
+      },
       onFallback: (reason) =>
         setVoiceNote(
           reason.code === "rate-limited"
@@ -109,12 +130,20 @@ export function useConversation() {
     voiceLevelsRef.current = speaker.levels;
     const chunker = createSpeechChunker((chunk) => speaker.say(chunk));
 
+    let firstWord = true;
+
     try {
       let answer: string;
       try {
-        answer = await streamReply(question, memory.current, (piece) => {
-          setReply((current) => (current ?? "") + piece); // show it…
-          chunker.push(piece); // …and queue it for speaking
+        answer = await streamReply(question, memory.current, {
+          onText: (piece) => {
+            if (firstWord) addStep(milestone("First word"));
+            firstWord = false;
+            setReply((current) => (current ?? "") + piece); // show it…
+            chunker.push(piece); // …and queue it for speaking
+          },
+          onStep: (step) => addStep({ kind: "tool", ...step }), // live, while still thinking
+          onEvidence: setEvidence,
         });
       } catch (error) {
         speaker.stopAll(); // don't keep talking over an error
@@ -141,6 +170,7 @@ export function useConversation() {
       const current = session.current;
       if (phase.current !== "recording" || !current) return;
       phase.current = "busy";
+      const releasedAt = performance.now(); // the timeline's "zero": when you let go
 
       const recording = await current.recorder.stop();
       teardown();
@@ -153,7 +183,7 @@ export function useConversation() {
         const text = await transcribeAudio(recording.blob);
         if (!text.trim()) throw new VoiceError("empty-audio");
         setTranscript(text);
-        await respond(text, autoStopped);
+        await respond(text, autoStopped, releasedAt);
       } catch (error) {
         dispatch({ type: "fail", error: toVoiceError(error) });
       } finally {
@@ -220,5 +250,5 @@ export function useConversation() {
     };
   }, [teardown]);
 
-  return { state, transcript, reply, voiceNote, start, stop, micLevelsRef, voiceLevelsRef };
+  return { state, transcript, reply, voiceNote, steps, evidence, start, stop, micLevelsRef, voiceLevelsRef };
 }
