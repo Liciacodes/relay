@@ -4,13 +4,13 @@ import type { LevelSource } from "@/lib/audio/types";
 import { browserVoiceAvailable, createBrowserVoice } from "./browserVoice";
 
 /** Fetch one chunk of speech from our server. Never throws: failures come back as values. */
-async function fetchSpeech(text: string): Promise<{ wav: ArrayBuffer } | { error: VoiceError }> {
+async function fetchSpeech(text: string, cancelled: AbortSignal): Promise<{ wav: ArrayBuffer } | { error: VoiceError }> {
   try {
     const response = await fetch("/api/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.any([cancelled, AbortSignal.timeout(20_000)]),
     });
     if (!response.ok) return { error: await errorFromResponse(response, "speech-failed") };
     return { wav: await response.arrayBuffer() };
@@ -28,6 +28,11 @@ export interface Speaker {
   readonly finished: Promise<void>;
   /** Stop speaking right away (used when the reply itself fails). */
   stopAll(): void;
+  /**
+   * You interrupted: stop now AND for good. Chunks still downloading are dropped instead
+   * of playing a moment later, nothing new is queued, and `finished` resolves.
+   */
+  cancel(): void;
   /** Live levels of Relay's voice, for the orb (real or simulated). */
   readonly levels: LevelSource;
 }
@@ -54,9 +59,10 @@ export function createSpeaker(player: AudioPlayer, { onFirstAudio, onFallback }:
   let played: Promise<void> = Promise.resolve();
   let started = false;
   let failure: VoiceError | null = null;
+  const cancelled = new AbortController();
 
   const markStarted = () => {
-    if (!started) {
+    if (!started && !cancelled.signal.aborted) {
       started = true;
       onFirstAudio();
     }
@@ -77,6 +83,7 @@ export function createSpeaker(player: AudioPlayer, { onFirstAudio, onFallback }:
     // The .catch keeps `played` from ever rejecting; the failure is reported via `finished`.
     played = played
       .then(() => {
+        if (cancelled.signal.aborted) return;
         markStarted();
         return browser.speak(chunk);
       })
@@ -90,15 +97,20 @@ export function createSpeaker(player: AudioPlayer, { onFirstAudio, onFallback }:
 
   return {
     say(chunk) {
+      if (cancelled.signal.aborted) return;
       // Start downloading now, even if earlier chunks are still being spoken.
-      const audio = mode === "groq" ? fetchSpeech(chunk) : null;
+      const audio = mode === "groq" ? fetchSpeech(chunk, cancelled.signal) : null;
 
       scheduled = scheduled.then(async () => {
+        if (cancelled.signal.aborted) return; // interrupted while this was downloading
         if (mode === "groq" && audio) {
           const result = await audio;
+          if (cancelled.signal.aborted) return;
           if ("wav" in result) {
             try {
               const { ended } = await player.play(result.wav);
+              // Interrupted while it was being decoded: silence it before it's heard.
+              if (cancelled.signal.aborted) return player.stopAll();
               markStarted();
               played = Promise.all([played, ended]).then(() => {});
               return;
@@ -127,6 +139,14 @@ export function createSpeaker(player: AudioPlayer, { onFirstAudio, onFallback }:
     stopAll() {
       player.stopAll();
       browser?.stopAll();
+    },
+
+    cancel() {
+      cancelled.abort(); // drops queued chunks and their downloads
+      failure = null;
+      player.stopAll();
+      browser?.stopAll();
+      resolveEnd();
     },
 
     levels: {

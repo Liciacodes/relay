@@ -2,9 +2,10 @@ import "server-only"; // build fails if a browser component ever imports this fi
 
 // Everything the GitHub tools share: one read-only request helper, error types and
 // small trimming helpers. Only GET requests exist here, so nothing can change on GitHub.
+// (The one write in the app, creating a confirmed issue, lives in app/api/issues/route.ts.)
 
-const GITHUB_BASE = "https://api.github.com";
-const TIMEOUT_MS = 10_000;
+export const GITHUB_BASE = "https://api.github.com";
+export const TIMEOUT_MS = 10_000;
 
 /** What went wrong, in the few kinds the rest of the app cares about. */
 export type GitHubErrorKind = "token" | "rate-limited" | "not-found" | "failed";
@@ -23,13 +24,22 @@ export class GitHubError extends Error {
   }
 }
 
-/** One authenticated GET to the GitHub API. Returns the parsed JSON. */
-export async function githubGet<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
+/** The headers every GitHub request needs, including the token. Throws if it's missing. */
+export function githubHeaders(): Record<string, string> {
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
     throw new GitHubError("token", "GITHUB_TOKEN is missing. Add it to .env.local and restart the dev server.");
   }
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+}
 
+/** One authenticated GET to the GitHub API. Returns the parsed JSON. */
+export async function githubGet<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
+  const headers = githubHeaders();
   const url = new URL(`${GITHUB_BASE}${path}`);
   for (const [name, value] of Object.entries(params)) url.searchParams.set(name, String(value));
 
@@ -37,11 +47,7 @@ export async function githubGet<T>(path: string, params: Record<string, string |
   try {
     response = await fetch(url, {
       method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
+      headers,
       signal: AbortSignal.timeout(TIMEOUT_MS),
       cache: "no-store",
     });
@@ -49,7 +55,11 @@ export async function githubGet<T>(path: string, params: Record<string, string |
     throw new GitHubError("failed", "Couldn't reach GitHub.");
   }
   if (response.ok) return (await response.json()) as T;
+  throw githubErrorFrom(response, path);
+}
 
+/** Turn a failed GitHub response into a GitHubError of the right kind. */
+export function githubErrorFrom(response: Response, path: string): GitHubError {
   // GitHub signals its limit with 403 or 429. Either `retry-after` (seconds) or
   // `x-ratelimit-reset` (a Unix time in seconds) says when to try again.
   const remaining = response.headers.get("x-ratelimit-remaining");
@@ -58,14 +68,14 @@ export async function githubGet<T>(path: string, params: Record<string, string |
     const reset = Number(response.headers.get("x-ratelimit-reset"));
     const seconds = retryAfter || (reset ? reset - Date.now() / 1000 : 60);
     const minutes = Math.max(1, Math.ceil(seconds / 60));
-    throw new GitHubError("rate-limited", `GitHub limit reached (${response.status})`, response.status, minutes);
+    return new GitHubError("rate-limited", `GitHub limit reached (${response.status})`, response.status, minutes);
   }
-  if (response.status === 401) throw new GitHubError("token", "GitHub rejected the token (401).", 401);
+  if (response.status === 401) return new GitHubError("token", "GitHub rejected the token (401).", 401);
   // 404, or 403 when the token can't see that repo: both mean "not available to us".
   if (response.status === 404 || response.status === 403) {
-    throw new GitHubError("not-found", `GitHub ${response.status} for ${path}`, response.status);
+    return new GitHubError("not-found", `GitHub ${response.status} for ${path}`, response.status);
   }
-  throw new GitHubError("failed", `GitHub responded ${response.status} for ${path}`, response.status);
+  return new GitHubError("failed", `GitHub responded ${response.status} for ${path}`, response.status);
 }
 
 let login: Promise<string> | null = null;
@@ -87,7 +97,10 @@ const REPO_NAME = /^[\w.-]+(\/[\w.-]+)?$/;
  */
 export async function repoPath(repo: unknown): Promise<{ fullName: string; path: string }> {
   const name = typeof repo === "string" ? repo.trim() : "";
-  if (!REPO_NAME.test(name)) throw new GitHubError("not-found", `Not a valid repo name: ${String(repo)}`);
+  // "." and ".." would change the URL's folder, so they're not names either.
+  if (!REPO_NAME.test(name) || name.split("/").some((part) => /^\.+$/.test(part))) {
+    throw new GitHubError("not-found", `Not a valid repo name: ${String(repo)}`);
+  }
   const fullName = name.includes("/") ? name : `${await myLogin()}/${name}`;
   return { fullName, path: `/repos/${fullName}` };
 }

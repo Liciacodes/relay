@@ -40,6 +40,8 @@ function message(state: VoiceState): string {
       return "Speaking.";
     case "done":
       return state.autoStopped ? "Stopped at 60 seconds." : "";
+    case "stopped":
+      return "Stopped. Hold to talk.";
     case "error":
       return state.error.message;
   }

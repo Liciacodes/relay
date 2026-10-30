@@ -23,7 +23,10 @@ the files touched. Prefer small, readable code over clever code. Introduce new c
 - **Day 4 (done): proof.** Evidence cards (≤ 6, ranked) under each answer, and a steps
   timeline with real measured times. `EvidenceCard.tsx` is the user's own exercise: leave
   it for them unless asked.
-- Day 5: interruption. Day 6: polish.
+- **Day 5 (done): act safely, interrupt.** `propose_issue` only drafts; a draft card
+  (Confirm / Cancel) creates the issue via `/api/issues` only on Confirm. Holding to talk
+  (Space or button) while Relay thinks or speaks cuts it off; Escape just stops it.
+- Day 6: polish.
 
 ## Stack
 
@@ -37,46 +40,58 @@ Note: with Cache Components, route files must not export `runtime`.
   - `transcribe/`: audio → `{ text }` (Whisper).
   - `reply/`: `{ text, history }` → **streamed NDJSON** (one JSON object per line, types in
     `src/lib/evidence.ts`): `step` (a tool finished, live), `text`, `evidence` (once, at
-    the end, only if a tool ran), `error` (then the stream ends). Bad input is a 400 JSON.
+    the end, only if a tool ran), `draft` (an issue to confirm), `error` (then the stream
+    ends). Bad input is a 400 JSON. Aborting the request (an interruption) stops Groq too.
+  - `issues/`: `{ repo, title, body }` → `{ issue }` (an `Evidence`). **The only GitHub
+    write in the app**, called only by the draft card's Confirm. Re-checks everything
+    (`checkDraft`, JSON content type, same-origin `Origin`).
   - `speak/`: `{ text }` (≤ 200 chars) → `audio/wav` (Orpheus).
 - `src/lib/server/`: server-only code (imports `server-only`). Secrets are used only here.
   `groq.ts` (all Groq calls, model IDs, system prompt, SSE parsing incl. tool-call pieces,
   WAV header fix), `answer.ts` (the tool loop: async generator, ≤ 4 rounds, last one
   `tool_choice: "none"`), `github.ts` (`githubGet` GET-only, `GitHubError`, `repoPath`,
-  `short`, `clampLimit`), `tools/` (one file per tool exporting `{ definition, run }`,
+  `short`, `clampLimit`, plus `githubHeaders`/`githubErrorFrom` shared with the issues
+  route), `tools/` (one file per tool exporting `{ definition, run }`,
   `index.ts` = `TOOLS` + `runTool`, which also times each tool and labels its step),
   `evidence.ts` (`evidenceFrom` tool result → cards, `rankEvidence`: mentioned in the answer
   first, then last lookup first, deduped, max 6), `respond.ts` (`fail()`, `requireApiKey()`,
-  `describeReplyFailure()`, `groqFailure()` error mapping).
+  `describeReplyFailure()`, `groqFailure()`, `issueFailure()` error mapping).
 - `src/lib/audio/`: browser audio building blocks, no React:
   `mic.ts`, `recorder.ts`, `analyser.ts` (`levelSourceFrom` → a `LevelSource`),
   `player.ts` (gapless playback on one AudioContext, unlocked on press),
   `errors.ts` (error codes, messages, `errorFromResponse`), `types.ts`.
 - `src/lib/speech/`: `chunker.ts` (first sentence alone, then ≤ 200-char packs),
-  `speaker.ts` (fetches + plays chunks in order, falls back to the browser voice),
+  `speaker.ts` (fetches + plays chunks in order, falls back to the browser voice;
+  `cancel()` stops for good when interrupted),
   `browserVoice.ts` (speechSynthesis + simulated levels).
 - `src/lib/transcribe.ts`, `src/lib/reply.ts`: browser calls to the routes (`reply.ts`
-  parses the NDJSON lines). `src/lib/evidence.ts`: shared `Evidence`, `ReplyEvent`,
+  parses the NDJSON lines, takes an abort `signal`). `src/lib/issues.ts`: `IssueDraft`,
+  `checkDraft` (shared limits: title ≤ 120, body ≤ 1500) and `createIssue()`. `src/lib/evidence.ts`: shared `Evidence`, `ReplyEvent`,
   `TimelineStep` types. `src/lib/format.ts`: `formatWhen`, `formatSeconds`.
-- `src/hooks/`: `useConversation` (the whole loop / state machine), `usePushToTalk`
-  (hold input), `useReducedMotion`.
+- `src/hooks/`: `useConversation` (the whole loop / state machine; numbered turns so a
+  cut-off turn can't touch the next one; draft confirm/cancel), `usePushToTalk` (hold
+  input + Escape), `useReducedMotion`.
 - `src/components/`: UI. `Waveform` (mic) and `Orb` (Relay's voice) draw on canvases from
   refs (no React re-renders). `Reply` shows the streaming answer. `Timeline` (steps; times
   from when you let go, tool rows = lookup duration), `EvidenceList` (staggered entrance)
-  → `EvidenceCard` (user-owned). The talk controls are `sticky bottom-0`.
+  → `EvidenceCard` (user-owned), `DraftCard` (takes focus when it appears, never Confirm
+  directly). The talk controls are `sticky bottom-0`.
 
 ## Rules
 
 - **Secrets stay server-side.** Never prefix a secret with `NEXT_PUBLIC_`; never import
   `src/lib/server/*` from a client component.
-- Voice states: `idle → requesting → recording → transcribing → thinking → speaking → done | error`.
-  Add new states to `VoiceState` in `src/lib/audio/types.ts`. Presses are ignored while
-  transcribing/thinking/speaking (interruption is Day 5).
+- Voice states: `idle → requesting → recording → transcribing → thinking → speaking → done | stopped | error`.
+  Add new states to `VoiceState` in `src/lib/audio/types.ts`. Presses are ignored only while
+  transcribing; while thinking/speaking a press interrupts (the cut-off turn stays on
+  screen, marked "Interrupted").
 - Groq limits are tight (Orpheus may allow ~100 requests/day): keep the chunker's packing,
   and mock `/api/reply` and `/api/speak` in tests unless real calls are needed.
 - Orpheus needs its terms accepted once in the Groq console; until then speech falls back
   to the browser voice (`model_terms_required`).
-- GitHub access is **read-only**: `githubGet` only makes GET requests; keep it that way.
+- GitHub access is **read-only** except one place: `githubGet` only makes GET requests;
+  the only write is `POST /api/issues`, after the user clicks Confirm. The model can only
+  draft (`propose_issue`); never give it a tool that writes.
   Tool results stay small (≤ 20 items, text cut by `short()`) and every item has a `url`
   (Day 4's evidence). Mistakes the model can fix (bad input, repo not found) go back to it
   as `{ error }`; token/rate-limit/outage errors are thrown and shown to the user.
@@ -84,7 +99,8 @@ Note: with Cache Components, route files must not export `runtime`.
 - Watch `[tool] …` lines in the dev terminal to see what the model asked for.
 - Model IDs live only in `src/lib/server/groq.ts`. Groq retires models often; check
   `GET https://api.groq.com/openai/v1/models` before changing them.
-- Space is handled only by the window listener in `usePushToTalk`; the button has no `onClick`.
+- Space is handled only by the window listener in `usePushToTalk` (it blocks every Space
+  keyup, so Space can never "click" a focused Confirm); the talk button has no `onClick`.
 - Recording auto-stops at 60s (`MAX_RECORDING_MS`) and transcribes what was captured.
 - Respect `prefers-reduced-motion`; animate only transform and opacity; UI motion < 300ms.
 - Colours are tokens in `src/app/globals.css`. Don't hard-code new colours.
@@ -92,7 +108,7 @@ Note: with Cache Components, route files must not export `runtime`.
 ## Running
 
 ```
-cp .env.local.example .env.local   # then add GROQ_API_KEY and a read-only GITHUB_TOKEN
+cp .env.local.example .env.local   # then add GROQ_API_KEY and GITHUB_TOKEN (read-only + Issues: write)
 npm run dev                        # http://localhost:3000
 npm run lint && npx tsc --noEmit   # checks
 ```

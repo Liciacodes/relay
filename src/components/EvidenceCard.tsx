@@ -19,7 +19,6 @@ export function EvidenceCard({ evidence }: Props) {
   // Step 3: one clear sentence for screen readers
   const label = `${kindLabel}, ${evidence.title}, in ${repoName}, ${evidence.dateLabel.toLowerCase()} ${formatWhen(evidence.date)}, opens in a new tab`;
 
-  // TODO (step 4): hover, press and focus states
 
   return (
     <a

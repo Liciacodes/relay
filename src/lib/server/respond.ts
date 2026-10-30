@@ -54,6 +54,30 @@ export function groqFailure(error: unknown, code: VoiceErrorCode, label: string)
   return fail(problem.status, problem.code, problem.message, problem.headers);
 }
 
+/**
+ * Turn a failed "create issue" into a clear response. For a write, GitHub's 403 means
+ * "your token may read here but not write", so it gets its own message.
+ */
+export function issueFailure(error: unknown, repo: string): Response {
+  console.error("[issues]", error instanceof Error ? error.message : error);
+  const name = repo.split("/")[1] ?? repo;
+  if (error instanceof GitHubError && error.kind !== "token" && error.kind !== "rate-limited") {
+    if (error.status === 403) {
+      return fail(
+        403,
+        "github-permission",
+        `Your token can't create issues in ${name}. Give it Issues: Read and write for this repo.`,
+      );
+    }
+    if (error.status === 404) return fail(404, "github-not-found", `Couldn't find ${name}, or your token can't see it.`);
+    if (error.status === 410) return fail(403, "github-permission", `Issues are turned off for ${name}.`);
+    if (error.status === 422) return fail(400, "server", "GitHub didn't accept this issue. Check the title and body.");
+  }
+  const problem = error instanceof GitHubError ? githubProblem(error) : null;
+  if (problem) return fail(problem.status, problem.code, problem.message, problem.headers);
+  return fail(502, "server", "Couldn't reach GitHub. Try again.");
+}
+
 function githubProblem(error: GitHubError): Problem {
   if (error.kind === "token") {
     // Missing token: say how to add it (status 0 = GitHub was never asked). Rejected: say so.

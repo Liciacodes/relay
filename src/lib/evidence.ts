@@ -2,6 +2,7 @@
 // Like errors.ts, this file has no secrets and no server-only code.
 
 import type { ApiError } from "./audio/errors";
+import type { IssueDraft } from "./issues";
 
 export type EvidenceKind = "commit" | "pr" | "issue" | "repo";
 
@@ -51,10 +52,12 @@ export interface TimelineStep {
  *   step     a tool finished (arrives live, while Relay is still thinking)
  *   text     a piece of the answer
  *   evidence the cards for this answer, ranked (sent once, at the end, only if a tool ran)
+ *   draft    an issue Relay drafted; nothing is created until you press Confirm
  *   error    something failed; the stream ends after this
  */
 export type ReplyEvent =
   | ({ type: "step" } & ToolStep)
   | { type: "text"; text: string }
   | { type: "evidence"; items: Evidence[] }
+  | { type: "draft"; draft: IssueDraft }
   | ({ type: "error" } & ApiError);

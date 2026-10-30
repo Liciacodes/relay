@@ -10,12 +10,21 @@ import { EvidenceCard } from "./EvidenceCard";
  * .evidence-item in globals.css). It's the one orchestrated moment of a turn.
  * A list, so screen readers say "list, 4 items"; not aria-live, so it doesn't talk over Relay.
  */
-export function EvidenceList({ items, stale }: { items: Evidence[]; stale: boolean }) {
+export function EvidenceList({
+  items,
+  stale,
+  interrupted,
+}: {
+  items: Evidence[];
+  stale: boolean;
+  /** These came with an answer you cut off. */
+  interrupted: boolean;
+}) {
   const headingId = useId();
   if (items.length === 0) return null;
 
   return (
-    <section aria-labelledby={headingId} data-stale={stale} className="evidence mt-4 w-full max-w-136">
+    <section aria-labelledby={headingId} data-stale={stale} data-interrupted={interrupted} className="evidence mt-4 w-full max-w-136">
       <h2 id={headingId} className="mb-2 text-[13px] text-muted">
         Sources
       </h2>

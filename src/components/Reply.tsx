@@ -5,7 +5,18 @@
  * aria-busy tells screen readers "still changing, wait": they announce the answer once it's
  * complete instead of re-reading it after every word.
  */
-export function Reply({ text, streaming, stale }: { text: string | null; streaming: boolean; stale: boolean }) {
+export function Reply({
+  text,
+  streaming,
+  stale,
+  interrupted,
+}: {
+  text: string | null;
+  streaming: boolean;
+  stale: boolean;
+  /** You cut this answer off: it stays, with a small note. */
+  interrupted: boolean;
+}) {
   return (
     <section
       aria-label="Relay's answer"
@@ -16,9 +27,11 @@ export function Reply({ text, streaming, stale }: { text: string | null; streami
       {text && (
         <p
           data-stale={stale}
+          data-interrupted={interrupted}
           className="reply text-[1.0625rem] leading-[1.6] text-pretty text-text/85"
         >
           {text}
+          {interrupted && <span className="ml-2 text-[13px] text-muted">Interrupted</span>}
         </p>
       )}
     </section>

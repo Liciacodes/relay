@@ -177,13 +177,69 @@ html {
     }
   }
 
+  /* An answer you cut off stays readable, just quieter. */
+  .reply[data-interrupted="true"],
+  .timeline[data-interrupted="true"],
+  .evidence[data-interrupted="true"] {
+    opacity: 0.7;
+  }
+
+  /* ---------- Draft issue card ---------- */
+
+  /* Arrives like an evidence card: fade + 6px rise. */
+  .draft-card {
+    animation: evidence-in 220ms var(--ease-out) backwards;
+  }
+
+  .draft-button {
+    height: 2.25rem;
+    padding-inline: 1rem;
+    border: 1px solid var(--line);
+    border-radius: 9999px;
+    font-size: 14px;
+    color: var(--text);
+    cursor: pointer;
+    transition:
+      transform 140ms var(--ease-out),
+      border-color 180ms ease;
+  }
+
+  /* Confirm is the one decision here, so it carries the accent. */
+  .draft-confirm {
+    background: color-mix(in oklab, var(--signal) 16%, var(--panel));
+    border-color: color-mix(in oklab, var(--signal) 60%, var(--line));
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .draft-button:hover {
+      border-color: var(--signal);
+    }
+  }
+
+  .draft-button:active {
+    transform: scale(0.97);
+  }
+
+  .draft-button:focus-visible {
+    outline: 2px solid var(--signal);
+    outline-offset: 2px;
+  }
+
+  .draft-button[aria-disabled="true"] {
+    color: var(--muted);
+    cursor: progress;
+    transform: none;
+  }
+
   /* Reduced motion: keep the fades, drop the movement. */
   @media (prefers-reduced-motion: reduce) {
-    .talk-button:active {
+    .talk-button:active,
+    .draft-button:active {
       transform: none;
     }
     .transcript,
-    .evidence-item {
+    .evidence-item,
+    .draft-card {
       animation-name: transcript-fade;
     }
   }

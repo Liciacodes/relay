@@ -32,6 +32,11 @@ export async function* answerQuestion(conversation: Turn[], apiKey: string): Asy
 
     const run = await runTool(call.name, call.arguments);
     yield { type: "step", ...run.step };
+    // A drafted issue goes to the browser as a card. Nothing is created until you Confirm.
+    if (call.name === "propose_issue" && run.step.ok) {
+      const { repo, title, body } = run.result as { repo: string; title: string; body: string };
+      yield { type: "draft", draft: { repo, title, body } };
+    }
     lookups.push({ tool: call.name, ok: run.step.ok, items: evidenceFrom(call.name, run.result) });
 
     messages.push(

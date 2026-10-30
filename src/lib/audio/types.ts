@@ -10,6 +10,7 @@ export type VoiceState =
   | { status: "thinking"; autoStopped: boolean } // reply requested, no voice yet
   | { status: "speaking" } // Relay's voice is playing
   | { status: "done"; autoStopped: boolean }
+  | { status: "stopped" } // you stopped Relay mid-answer (Escape, or a quick tap)
   | { status: "error"; error: VoiceError };
 
 /** Anything that can report live audio levels: the mic, or Relay's voice. */

@@ -1,6 +1,7 @@
 import { VoiceError, errorFromResponse } from "./audio/errors";
 import type { Turn } from "./audio/types";
 import type { Evidence, ReplyEvent, ToolStep } from "./evidence";
+import type { IssueDraft } from "./issues";
 
 const TIMEOUT_MS = 60_000; // tool rounds (GitHub lookups) add a few seconds
 
@@ -11,6 +12,15 @@ export interface ReplyHandlers {
   onStep?: (step: ToolStep) => void;
   /** The evidence cards for this answer (sent once, at the end). */
   onEvidence?: (items: Evidence[]) => void;
+  /** Relay drafted an issue. Nothing is created until you press Confirm. */
+  onDraft?: (draft: IssueDraft) => void;
+  /** Aborting it cancels the answer (you interrupted). streamReply then throws an AbortError. */
+  signal?: AbortSignal;
+}
+
+/** True for the error thrown when you interrupted (aborted) the answer. */
+export function isInterruption(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 /**
@@ -21,15 +31,21 @@ export interface ReplyHandlers {
  * and handle every complete line by its `type`. Returns the full answer text at the end.
  */
 export async function streamReply(text: string, history: Turn[], handlers: ReplyHandlers): Promise<string> {
+  const interrupted = () => new DOMException("Interrupted", "AbortError");
+  // AbortSignal.any: stop on whichever comes first, you interrupting or the timeout.
+  const timeout = AbortSignal.timeout(TIMEOUT_MS);
+  const signal = handlers.signal ? AbortSignal.any([handlers.signal, timeout]) : timeout;
+
   let response: Response;
   try {
     response = await fetch("/api/reply", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, history }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal,
     });
   } catch {
+    if (handlers.signal?.aborted) throw interrupted();
     throw new VoiceError("network");
   }
 
@@ -55,6 +71,9 @@ export async function streamReply(text: string, history: Turn[], handlers: Reply
       case "evidence":
         handlers.onEvidence?.(event.items);
         break;
+      case "draft":
+        handlers.onDraft?.(event.draft);
+        break;
       case "error":
         throw new VoiceError(event.error.code, event.error.message);
     }
@@ -72,6 +91,7 @@ export async function streamReply(text: string, history: Turn[], handlers: Reply
     }
     handle(buffer);
   } catch (error) {
+    if (handlers.signal?.aborted) throw interrupted(); // you cut it off: not a failure
     if (error instanceof VoiceError) throw error; // an `error` line from the server
     // The connection broke halfway, or a line wasn't valid JSON.
     throw new VoiceError("reply-failed", "The answer was cut off. Try again.");

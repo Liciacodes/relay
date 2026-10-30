@@ -10,11 +10,20 @@ import { formatSeconds } from "@/lib/format";
  * the turn, and movement would be noise next to the orb. Not aria-live either: the
  * status line already announces what's happening.
  */
-export function Timeline({ steps, stale }: { steps: TimelineStep[]; stale: boolean }) {
+export function Timeline({
+  steps,
+  stale,
+  interrupted,
+}: {
+  steps: TimelineStep[];
+  stale: boolean;
+  /** You cut this turn off; its last step says "Interrupted". */
+  interrupted: boolean;
+}) {
   if (steps.length === 0) return null;
 
   return (
-    <div data-stale={stale} className="timeline flex w-full max-w-2xl flex-col items-center gap-1">
+    <div data-stale={stale} data-interrupted={interrupted} className="timeline flex w-full max-w-2xl flex-col items-center gap-1">
       <ol
         aria-label="What Relay did, timed from when you let go"
         className="flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1 text-[13px] text-muted"

@@ -9,8 +9,9 @@ const LABELS: Record<TalkMode, string> = {
   starting: "Opening mic…",
   recording: "Release to send",
   transcribing: "Transcribing…",
-  thinking: "Thinking…",
-  speaking: "Speaking…",
+  // While Relay answers, holding the button cuts it off and starts listening.
+  thinking: "Hold to interrupt",
+  speaking: "Hold to interrupt",
 };
 
 interface Props extends Omit<ComponentProps<"button">, "children"> {
@@ -23,13 +24,12 @@ interface Props extends Omit<ComponentProps<"button">, "children"> {
  * pointer/keyboard handlers passed in by usePushToTalk.
  */
 export function TalkButton({ mode, hintId, ...handlers }: Props) {
-  const busy = mode === "transcribing" || mode === "thinking" || mode === "speaking";
   return (
     <button
       type="button"
       {...handlers}
       aria-pressed={mode === "recording"}
-      aria-disabled={busy}
+      aria-disabled={mode === "transcribing"} // the only time a press is ignored
       aria-describedby={hintId}
       data-mode={mode}
       className="talk-button group relative flex h-14 min-w-56 touch-none items-center justify-center gap-3 rounded-full border px-7 text-[15px] font-medium select-none"

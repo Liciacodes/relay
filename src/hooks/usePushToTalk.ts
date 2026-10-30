@@ -6,6 +6,8 @@ import type { KeyboardEvent, PointerEvent } from "react";
 interface Options {
   onPress: () => void;
   onRelease: () => void;
+  /** Escape: stop Relay without starting to listen. */
+  onStop: () => void;
   /** When false, presses are ignored (e.g. while transcribing). */
   enabled: boolean;
 }
@@ -18,11 +20,13 @@ function isTypingTarget(target: EventTarget | null) {
 
 /**
  * Hold-to-talk input: pointer on the button, Space anywhere, or Enter on the button.
+ * Escape anywhere stops Relay.
  *
- * Space is handled in ONE place, the window listener. It calls preventDefault, and the
- * button has no onClick, so a focused button can't fire a second press of its own.
+ * Space is handled in ONE place, the window listener. It calls preventDefault on both
+ * keydown and keyup, so no focused button (talk button, or a draft's Confirm) is ever
+ * "clicked" by Space: browsers click a focused button when Space is released.
  */
-export function usePushToTalk({ onPress, onRelease, enabled }: Options) {
+export function usePushToTalk({ onPress, onRelease, onStop, enabled }: Options) {
   // Which input is holding right now, so one input can't release another's press.
   const heldBy = useRef<"pointer" | "space" | "enter" | null>(null);
 
@@ -41,13 +45,15 @@ export function usePushToTalk({ onPress, onRelease, enabled }: Options) {
   // useEffectEvent: the window listeners always see the latest press/release
   // without re-subscribing on every render.
   const onKeyDown = useEffectEvent((event: globalThis.KeyboardEvent) => {
-    if (event.code !== "Space" || isTypingTarget(event.target)) return;
+    if (isTypingTarget(event.target)) return;
+    if (event.code === "Escape" && !heldBy.current) return onStop();
+    if (event.code !== "Space") return;
     event.preventDefault(); // no page scroll, no native button press
     if (!event.repeat) press("space"); // holding a key fires keydown again and again
   });
   const onKeyUp = useEffectEvent((event: globalThis.KeyboardEvent) => {
-    if (event.code !== "Space" || heldBy.current !== "space") return;
-    event.preventDefault();
+    if (event.code !== "Space" || isTypingTarget(event.target)) return;
+    event.preventDefault(); // always, even when the press was ignored: see above
     release("space");
   });
   // Switching tabs or windows mid-hold would swallow the key-up, so stop there.

@@ -4,11 +4,12 @@ import type { ToolStep } from "@/lib/evidence";
 import { GitHubError } from "../github";
 import { listMyRepos } from "./listMyRepos";
 import { openIssues } from "./openIssues";
+import { proposeIssue } from "./proposeIssue";
 import { pullRequests } from "./pullRequests";
 import { recentCommits } from "./recentCommits";
 import type { Tool, ToolResult } from "./types";
 
-const ALL: Tool[] = [listMyRepos, recentCommits, pullRequests, openIssues];
+const ALL: Tool[] = [listMyRepos, recentCommits, pullRequests, openIssues, proposeIssue];
 
 /** The menu sent to the model with every question. */
 export const TOOLS = ALL.map((tool) => tool.definition);
@@ -19,6 +20,7 @@ const LABELS: Record<string, (repo: string) => string> = {
   recent_commits: (repo) => `Checked commits in ${repo}`,
   pull_requests: (repo) => `Checked pull requests in ${repo}`,
   open_issues: (repo) => `Checked open issues in ${repo}`,
+  propose_issue: (repo) => `Drafted an issue for ${repo}`,
 };
 
 export interface ToolRun {
