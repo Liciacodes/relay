@@ -5,6 +5,7 @@ import type { ReplyEvent } from "@/lib/evidence";
 import { evidenceFrom, rankEvidence, type Lookup } from "./evidence";
 import { GroqError, streamChatRound, type ChatEvent, type ChatMessage, type ToolCall } from "./groq";
 import { TOOLS, runTool } from "./tools";
+import { myRepos } from "./tools/listMyRepos";
 
 const MAX_ROUNDS = 4; // at most 3 tool calls, then the model must answer
 
@@ -22,12 +23,30 @@ export async function* answerQuestion(conversation: Turn[], apiKey: string): Asy
   const messages: ChatMessage[] = [...conversation];
   const lookups: Lookup[] = []; // the cards each tool produced, in the order they ran
   let answer = "";
+  const started = performance.now();
+  const since = () => Math.round(performance.now() - started); // for the [timing] lines
+  // Your repo names, for the system prompt (cached for 5 minutes, usually instant). If
+  // GitHub can't be reached, the model falls back to calling list_my_repos itself.
+  const repos = (await myRepos().catch(() => [])).map((repo) => repo.name);
+  if (since() > 50) console.log(`[timing] repo list fetched: ${since()}ms`);
 
   for (let round = 1; round <= MAX_ROUNDS; round++) {
     const lastRound = round === MAX_ROUNDS;
+    const roundStart = since();
     // `yield*` passes on every event from the round, then gives us its result.
-    const { text, call } = yield* oneRound(messages, apiKey, lastRound ? "none" : "auto");
+    const { text, call, firstByte, firstText } = yield* oneRound(messages, apiKey, {
+      toolChoice: lastRound ? "none" : "auto",
+      repos,
+      since,
+    });
     answer += text;
+    // Times in ms since the question reached the server. Watch them in the `npm run dev` terminal.
+    console.log(
+      `[timing] round ${round}: started ${roundStart}, first byte ${firstByte}` +
+        (firstText === null ? "" : `, first text ${firstText}`) +
+        `, done ${since()}` +
+        (call ? ` → ${call.name}` : " → answered"),
+    );
     if (!call) break; // the model answered: done
 
     const run = await runTool(call.name, call.arguments);
@@ -57,22 +76,25 @@ export async function* answerQuestion(conversation: Turn[], apiKey: string): Asy
 async function* oneRound(
   messages: ChatMessage[],
   apiKey: string,
-  toolChoice: "auto" | "none",
-): AsyncGenerator<ReplyEvent, { text: string; call: ToolCall | null }> {
+  { toolChoice, repos, since }: { toolChoice: "auto" | "none"; repos: string[]; since: () => number },
+): AsyncGenerator<ReplyEvent, { text: string; call: ToolCall | null; firstByte: number; firstText: number | null }> {
   for (let attempt = 1; ; attempt++) {
     let text = "";
     let call: ToolCall | null = null;
+    let firstText: number | null = null;
     try {
-      const events = await streamChatRound(messages, apiKey, { tools: TOOLS, toolChoice });
+      const events = await streamChatRound(messages, apiKey, { tools: TOOLS, toolChoice, repos });
+      const firstByte = since(); // Groq answered (headers in); the stream follows
       for await (const event of eventsOf(events)) {
         if (event.type === "text") {
+          firstText ??= since();
           text += event.text;
           yield { type: "text", text: event.text };
         } else {
           call ??= event.call; // gpt-oss makes one call at a time; keep the first
         }
       }
-      return { text, call };
+      return { text, call, firstByte, firstText };
     } catch (error) {
       // gpt-oss sometimes writes a tool call Groq can't read ("tool_use_failed").
       const broken = error instanceof GroqError && error.groqCode === "tool_use_failed";

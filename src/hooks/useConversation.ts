@@ -12,6 +12,7 @@ import { createIssue, type IssueDraft } from "@/lib/issues";
 import { isInterruption, streamReply } from "@/lib/reply";
 import { createSpeechChunker } from "@/lib/speech/chunker";
 import { createSpeaker, type Speaker } from "@/lib/speech/speaker";
+import { createTurnTimer, type TurnTimer } from "@/lib/timing";
 import { transcribeAudio } from "@/lib/transcribe";
 
 export const MAX_RECORDING_MS = 60_000;
@@ -173,7 +174,7 @@ export function useConversation() {
    * `releasedAt` is when you let go (performance.now()); milestones are timed from it.
    */
   const respond = useCallback(
-    async (question: string, autoStopped: boolean, releasedAt: number) => {
+    async (question: string, autoStopped: boolean, releasedAt: number, timer: TurnTimer) => {
       const myTurn = turn.current;
       const live = () => turn.current === myTurn; // false once you interrupt
       const milestone = (label: string): TimelineStep => ({
@@ -194,9 +195,11 @@ export function useConversation() {
 
       const speaker = createSpeaker(player.current!, {
         onFirstAudio: () => {
+          timer.mark("first sound");
           addStep(milestone("Started speaking"));
           if (live()) dispatch({ type: "speak" });
         },
+        onTiming: (event) => timer.mark(event === "speak-sent" ? "first speak sent" : "first audio back"),
         onFallback: (reason) =>
           live() &&
           setVoiceNote(
@@ -209,7 +212,11 @@ export function useConversation() {
       answering.current = current;
       phase.current = "answering";
       voiceLevelsRef.current = speaker.levels;
-      const chunker = createSpeechChunker((chunk) => speaker.say(chunk));
+      const chunker = createSpeechChunker((chunk) => {
+        timer.mark("first chunk ready");
+        timer.note("first chunk chars", chunk.length);
+        speaker.say(chunk);
+      });
 
       let firstWord = true;
       const drafted: { draft: IssueDraft | null } = { draft: null };
@@ -217,17 +224,22 @@ export function useConversation() {
       try {
         let answer: string;
         try {
+          timer.mark("reply sent");
           answer = await streamReply(question, memory.current, {
             signal: current.controller.signal,
             onText: (piece) => {
               if (!live()) return;
+              timer.mark("first text");
               if (firstWord) addStep(milestone("First word"));
               firstWord = false;
               current.text += piece;
               setReply((text) => (text ?? "") + piece); // show it…
               chunker.push(piece); // …and queue it for speaking
             },
-            onStep: (step) => addStep({ kind: "tool", ...step }), // live, while still thinking
+            onStep: (step) => {
+              timer.mark(step.label.startsWith("Listed") ? "repos listed" : "lookup done");
+              addStep({ kind: "tool", ...step }); // live, while still thinking
+            },
             onEvidence: (items) => live() && setEvidence(items),
             onDraft: (next) => {
               if (!live()) return;
@@ -241,6 +253,7 @@ export function useConversation() {
           throw error;
         }
 
+        timer.mark("answer complete");
         chunker.flush();
         speaker.end();
         // Remember the draft too, so "make the title shorter" can work next turn.
@@ -255,6 +268,7 @@ export function useConversation() {
         await speaker.finished;
         if (live()) dispatch({ type: "done", autoStopped });
       } finally {
+        timer.report(question);
         if (answering.current === current) {
           answering.current = null;
           voiceLevelsRef.current = null;
@@ -271,8 +285,10 @@ export function useConversation() {
       phase.current = "transcribing";
       const myTurn = turn.current;
       const releasedAt = performance.now(); // the timeline's "zero": when you let go
+      const timer = createTurnTimer(releasedAt);
 
       const recording = await current.recorder.stop();
+      timer.mark("recording saved");
       teardown();
 
       try {
@@ -286,9 +302,10 @@ export function useConversation() {
         }
         dispatch({ type: "transcribe", autoStopped });
         const text = await transcribeAudio(recording.blob);
+        timer.mark("transcribed");
         if (!text.trim()) throw new VoiceError("empty-audio");
         setTranscript(text);
-        await respond(text, autoStopped, releasedAt);
+        await respond(text, autoStopped, releasedAt, timer);
       } catch (error) {
         if (turn.current === myTurn) dispatch({ type: "fail", error: toVoiceError(error) });
       } finally {
@@ -413,6 +430,12 @@ export function useConversation() {
   const cancelDraft = useCallback(() => {
     if (draftRef.current?.status !== "creating") updateDraft(null);
   }, [updateDraft]);
+
+  // On page load, have the server fetch your repo list, so the first question already gets
+  // the spelling hint ("reviewpal", not "ReviewPol"). Fire and forget.
+  useEffect(() => {
+    void fetch("/api/warm", { method: "POST" }).catch(() => {});
+  }, []);
 
   // If the page goes away mid-turn, free the mic and go quiet.
   useEffect(() => {

@@ -4,6 +4,7 @@
 
 import { transcribeWithGroq } from "@/lib/server/groq";
 import { fail, groqFailure, requireApiKey } from "@/lib/server/respond";
+import { cachedRepoNames, myRepos } from "@/lib/server/tools/listMyRepos";
 import type { TranscribeResponse } from "@/lib/audio/errors";
 
 const MIN_BYTES = 1_000; // smaller than this is a click, not speech
@@ -27,8 +28,17 @@ export async function POST(request: Request) {
   const key = requireApiKey();
   if ("response" in key) return key.response;
 
+  // Your repo names help Whisper spell them ("reviewpal", not "ReviewPol"). Only names
+  // already cached are used, so this never waits for GitHub; the call below fills the cache
+  // while Whisper works, ready for /api/reply a moment later.
+  const repos = cachedRepoNames();
+  void myRepos().catch(() => {});
+  const hint = repos.length > 0 ? `GitHub repositories: ${repos.join(", ")}.` : undefined;
+
   try {
-    const text = await transcribeWithGroq(audio, key.apiKey);
+    const started = performance.now();
+    const text = await transcribeWithGroq(audio, key.apiKey, hint);
+    console.log(`[timing] transcribe ${Math.round(audio.size / 1024)} KB: ${Math.round(performance.now() - started)}ms`);
     if (!text) {
       return fail(422, "empty-audio", "Didn't catch any words. Try again a little closer to the mic.");
     }

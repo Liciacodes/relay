@@ -16,7 +16,9 @@ export async function POST(request: Request) {
   if ("response" in key) return key.response;
 
   try {
+    const started = performance.now();
     const wav = await synthesizeSpeech(text, key.apiKey);
+    console.log(`[timing] speak ${text.length} chars: ${Math.round(performance.now() - started)}ms`);
     return new Response(wav, {
       headers: { "Content-Type": "audio/wav", "Cache-Control": "no-store" },
     });

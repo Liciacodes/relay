@@ -26,7 +26,10 @@ the files touched. Prefer small, readable code over clever code. Introduce new c
 - **Day 5 (done): act safely, interrupt.** `propose_issue` only drafts; a draft card
   (Confirm / Cancel) creates the issue via `/api/issues` only on Confirm. Holding to talk
   (Space or button) while Relay thinks or speaks cuts it off; Escape just stops it.
-- Day 6: polish.
+- **Day 6 (part 1, done): speed.** Measured every stage (`[timing]` lines on the server,
+  `window.__relayTimings` in the browser); repo names cached and put in the prompt and
+  Whisper's hint; long first sentences cut early. First sound 5.8s → 4.3s on average.
+- Day 6: polish (rest).
 
 ## Stack
 
@@ -46,13 +49,17 @@ Note: with Cache Components, route files must not export `runtime`.
     write in the app**, called only by the draft card's Confirm. Re-checks everything
     (`checkDraft`, JSON content type, same-origin `Origin`).
   - `speak/`: `{ text }` (≤ 200 chars) → `audio/wav` (Orpheus).
+  - `warm/`: POST on page load → 204. Starts filling the repo-list cache, so the first
+    question already gets Whisper's spelling hint.
 - `src/lib/server/`: server-only code (imports `server-only`). Secrets are used only here.
   `groq.ts` (all Groq calls, model IDs, system prompt, SSE parsing incl. tool-call pieces,
   WAV header fix), `answer.ts` (the tool loop: async generator, ≤ 4 rounds, last one
   `tool_choice: "none"`), `github.ts` (`githubGet` GET-only, `GitHubError`, `repoPath`,
   `short`, `clampLimit`, plus `githubHeaders`/`githubErrorFrom` shared with the issues
   route), `tools/` (one file per tool exporting `{ definition, run }`,
-  `index.ts` = `TOOLS` + `runTool`, which also times each tool and labels its step),
+  `index.ts` = `TOOLS` + `runTool`, which also times each tool and labels its step;
+  `listMyRepos.ts` also holds `myRepos()`, the repo list cached for 5 minutes, and
+  `cachedRepoNames()`, which never waits),
   `evidence.ts` (`evidenceFrom` tool result → cards, `rankEvidence`: mentioned in the answer
   first, then last lookup first, deduped, max 6), `respond.ts` (`fail()`, `requireApiKey()`,
   `describeReplyFailure()`, `groqFailure()`, `issueFailure()` error mapping).
@@ -60,7 +67,8 @@ Note: with Cache Components, route files must not export `runtime`.
   `mic.ts`, `recorder.ts`, `analyser.ts` (`levelSourceFrom` → a `LevelSource`),
   `player.ts` (gapless playback on one AudioContext, unlocked on press),
   `errors.ts` (error codes, messages, `errorFromResponse`), `types.ts`.
-- `src/lib/speech/`: `chunker.ts` (first sentence alone, then ≤ 200-char packs),
+- `src/lib/speech/`: `chunker.ts` (first sentence alone, cut at its first comma after 40
+  characters if it's over 60; then ≤ 200-char packs),
   `speaker.ts` (fetches + plays chunks in order, falls back to the browser voice;
   `cancel()` stops for good when interrupted),
   `browserVoice.ts` (speechSynthesis + simulated levels).
@@ -68,6 +76,7 @@ Note: with Cache Components, route files must not export `runtime`.
   parses the NDJSON lines, takes an abort `signal`). `src/lib/issues.ts`: `IssueDraft`,
   `checkDraft` (shared limits: title ≤ 120, body ≤ 1500) and `createIssue()`. `src/lib/evidence.ts`: shared `Evidence`, `ReplyEvent`,
   `TimelineStep` types. `src/lib/format.ts`: `formatWhen`, `formatSeconds`.
+  `src/lib/timing.ts`: per-turn marks (ms since you let go), logged in dev.
 - `src/hooks/`: `useConversation` (the whole loop / state machine; numbered turns so a
   cut-off turn can't touch the next one; draft confirm/cancel), `usePushToTalk` (hold
   input + Escape), `useReducedMotion`.
@@ -96,7 +105,12 @@ Note: with Cache Components, route files must not export `runtime`.
   (Day 4's evidence). Mistakes the model can fix (bad input, repo not found) go back to it
   as `{ error }`; token/rate-limit/outage errors are thrown and shown to the user.
 - gpt-oss makes one tool call at a time (no parallel calls). Temperature stays ≤ 0.5.
-- Watch `[tool] …` lines in the dev terminal to see what the model asked for.
+- Watch `[tool] …` lines in the dev terminal to see what the model asked for, and
+  `[timing] …` lines for where the time goes (Groq rounds, transcribe, speak).
+- Speed: every extra Groq round costs 0.2–2s plus a GitHub lookup. The system prompt carries
+  the user's repo names (newest first) so the model rarely needs `list_my_repos` just to find
+  a name, and can fix misheard names. Orpheus takes ~0.5–1s for a short chunk, ~2.4s for 170
+  characters: keep the first chunk short.
 - Model IDs live only in `src/lib/server/groq.ts`. Groq retires models often; check
   `GET https://api.groq.com/openai/v1/models` before changing them.
 - Space is handled only by the window listener in `usePushToTalk` (it blocks every Space

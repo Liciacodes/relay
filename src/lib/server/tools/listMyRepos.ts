@@ -14,6 +14,37 @@ interface GitHubRepo {
   html_url: string;
 }
 
+const CACHE_MS = 5 * 60_000; // your repo list rarely changes; 5 minutes is fresh enough
+/** `names` is filled in once GitHub has answered. */
+let cache: { at: number; repos: Promise<GitHubRepo[]>; names: string[] | null } | null = null;
+
+const fresh = () => cache !== null && Date.now() - cache.at < CACHE_MS;
+
+/**
+ * Your 20 most recently pushed repos, newest first. Asked from GitHub at most once every
+ * 5 minutes: the system prompt, Whisper's spelling hint and list_my_repos all share it.
+ */
+export function myRepos(): Promise<GitHubRepo[]> {
+  if (!fresh()) {
+    const entry: NonNullable<typeof cache> = {
+      at: Date.now(),
+      repos: githubGet<GitHubRepo[]>("/user/repos", { sort: "pushed", per_page: 20 }),
+      names: null,
+    };
+    cache = entry;
+    entry.repos.then(
+      (repos) => (entry.names = repos.map((repo) => repo.name)),
+      () => cache === entry && (cache = null), // a failure shouldn't be remembered
+    );
+  }
+  return cache!.repos;
+}
+
+/** Repo names, newest first, only if already fetched: never waits for GitHub. */
+export function cachedRepoNames(): string[] {
+  return fresh() ? (cache!.names ?? []) : [];
+}
+
 export const listMyRepos: Tool = {
   definition: {
     type: "function",
@@ -30,10 +61,7 @@ export const listMyRepos: Tool = {
   },
 
   async run(args) {
-    const repos = await githubGet<GitHubRepo[]>("/user/repos", {
-      sort: "pushed", // newest code first, so repo 1 is "the repo you're working on"
-      per_page: clampLimit(args.limit),
-    });
+    const repos = (await myRepos()).slice(0, clampLimit(args.limit));
     return {
       count: repos.length,
       repos: repos.map((repo) => ({

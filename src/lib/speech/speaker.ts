@@ -42,6 +42,8 @@ interface Options {
   onFirstAudio: () => void;
   /** Called once if Groq's voice fails and the browser's voice takes over. */
   onFallback: (reason: VoiceError) => void;
+  /** For timing: a chunk's audio was requested, or arrived. */
+  onTiming?: (event: "speak-sent" | "audio-back") => void;
 }
 
 /**
@@ -52,12 +54,13 @@ interface Options {
  * - `scheduled` makes sure chunk 2 is queued only after chunk 1 has been queued.
  * - `played` resolves when everything queued so far has finished playing.
  */
-export function createSpeaker(player: AudioPlayer, { onFirstAudio, onFallback }: Options): Speaker {
+export function createSpeaker(player: AudioPlayer, { onFirstAudio, onFallback, onTiming }: Options): Speaker {
   let mode: "groq" | "browser" = "groq";
   const browser = browserVoiceAvailable() ? createBrowserVoice() : null;
   let scheduled: Promise<void> = Promise.resolve();
   let played: Promise<void> = Promise.resolve();
   let started = false;
+  let requested = false; // has any chunk been asked for yet?
   let failure: VoiceError | null = null;
   const cancelled = new AbortController();
 
@@ -99,7 +102,17 @@ export function createSpeaker(player: AudioPlayer, { onFirstAudio, onFallback }:
     say(chunk) {
       if (cancelled.signal.aborted) return;
       // Start downloading now, even if earlier chunks are still being spoken.
-      const audio = mode === "groq" ? fetchSpeech(chunk, cancelled.signal) : null;
+      // Timing follows the FIRST chunk only: it decides when Relay starts talking.
+      const first = !requested;
+      requested = true;
+      if (mode === "groq" && first) onTiming?.("speak-sent");
+      const audio =
+        mode === "groq"
+          ? fetchSpeech(chunk, cancelled.signal).then((result) => {
+              if (first) onTiming?.("audio-back");
+              return result;
+            })
+          : null;
 
       scheduled = scheduled.then(async () => {
         if (cancelled.signal.aborted) return; // interrupted while this was downloading

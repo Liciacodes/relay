@@ -1,11 +1,25 @@
 // Turns streaming answer text into pieces worth sending to the voice.
 //
 // Rules (to start talking fast, but use few Groq speech requests):
-// 1. The first complete sentence is sent on its own, so speech starts quickly.
+// 1. The first complete sentence is sent on its own, so speech starts quickly. If it's
+//    long, only its start is: up to the first comma after FIRST_MIN characters.
+//    (Measured: Orpheus needs ~0.5–1s for a short sentence, ~2.4s for 170 characters.)
 // 2. Later sentences are packed together, up to MAX_CHUNK characters per piece.
 // 3. A single sentence longer than MAX_CHUNK is split at a comma or space.
 
 export const MAX_CHUNK = 200; // Groq Orpheus accepts at most 200 characters
+const FIRST_MIN = 40; // a first chunk shorter than this is never cut
+const FIRST_LONG = 60; // a first sentence longer than this gets cut at a comma
+
+/** Split a long first sentence at its first comma after FIRST_MIN characters, if any. */
+function cutFirst(sentence: string): string[] {
+  const text = sentence.trim();
+  if (!text) return [];
+  if (text.length <= FIRST_LONG) return [text];
+  const comma = text.indexOf(", ", FIRST_MIN);
+  if (comma === -1 || comma >= MAX_CHUNK) return [text];
+  return [text.slice(0, comma + 1), text.slice(comma + 2)];
+}
 
 // A sentence ends with . ! ? or … (maybe followed by a closing quote/bracket) and then a space.
 // Requiring the space avoids splitting "3.5" or "v2.0" in the middle.
@@ -45,7 +59,8 @@ export function createSpeechChunker(onChunk: (chunk: string) => void): SpeechChu
   };
 
   const addSentence = (sentence: string) => {
-    for (const piece of splitLong(sentence)) {
+    const pieces = sentFirst ? splitLong(sentence) : cutFirst(sentence).flatMap(splitLong);
+    for (const piece of pieces) {
       if (!sentFirst) {
         sentFirst = true;
         send(piece); // rule 1: first sentence alone
