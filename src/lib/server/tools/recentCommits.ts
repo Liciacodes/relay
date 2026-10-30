@@ -11,6 +11,7 @@ interface GitHubCommit {
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const LISTED_MAX = 5; // how many commits the model gets to describe out loud
 
 export const recentCommits: Tool = {
   definition: {
@@ -49,10 +50,25 @@ export const recentCommits: Tool = {
       throw error;
     }
 
+    // Numbered and labelled so the model keeps the order and counts each commit once.
+    // (One commit message can list several changes, like "usage limits, install button
+    // and privacy page"; the model used to split those into separate commits.)
+    const limit = params.per_page as number;
+    // A full page means GitHub may have more, so the total becomes "10 or more".
+    const cutOff = commits.length === limit;
+    // The model only sees the newest few: it can't read out (or miscount) what it never gets.
+    const listed = commits.slice(0, LISTED_MAX);
     return {
       repo: fullName,
-      count: commits.length,
-      commits: commits.map((c) => ({
+      count: cutOff ? `${limit} or more` : commits.length,
+      ...(cutOff && { sayCount: `at least ${limit}` }),
+      ...(listed.length < commits.length && {
+        listed: `Only the newest ${listed.length} are listed below. Say the count, describe these ${listed.length}, then offer the rest.`,
+      }),
+      order: "newest first: commit 1 is the most recent",
+      note: "Each item is exactly one commit, even when its message lists several changes.",
+      commits: listed.map((c, index) => ({
+        n: index + 1,
         sha: c.sha.slice(0, 7),
         message: short(c.commit.message),
         author: c.author?.login ?? c.commit.author?.name ?? "unknown",

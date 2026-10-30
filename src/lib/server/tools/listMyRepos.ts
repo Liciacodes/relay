@@ -19,7 +19,7 @@ export const listMyRepos: Tool = {
     type: "function",
     function: {
       name: "list_my_repos",
-      description: "List the user's GitHub repositories, most recently updated first.",
+      description: "List the user's GitHub repositories, most recently pushed first.",
       parameters: {
         type: "object",
         properties: {
@@ -31,7 +31,7 @@ export const listMyRepos: Tool = {
 
   async run(args) {
     const repos = await githubGet<GitHubRepo[]>("/user/repos", {
-      sort: "updated",
+      sort: "pushed", // newest code first, so repo 1 is "the repo you're working on"
       per_page: clampLimit(args.limit),
     });
     return {
