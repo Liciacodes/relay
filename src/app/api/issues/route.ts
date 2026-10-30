@@ -6,6 +6,7 @@
 
 import type { Evidence } from "@/lib/evidence";
 import { checkDraft } from "@/lib/issues";
+import { modeOf } from "@/lib/server/access";
 import { GITHUB_BASE, GitHubError, TIMEOUT_MS, githubErrorFrom, githubHeaders } from "@/lib/server/github";
 import { fail, issueFailure } from "@/lib/server/respond";
 
@@ -33,6 +34,8 @@ function fromOurPage(request: Request): boolean {
 
 export async function POST(request: Request) {
   if (!fromOurPage(request)) return fail(403, "server", "Issues can only be created from Relay's own page.");
+  // The public demo is read-only: only the owner (full mode, after the password) can write.
+  if (modeOf(request) !== "full") return fail(403, "github-permission", "Creating issues is turned off in the demo.");
 
   const body = (await request.json().catch(() => null)) as { repo?: unknown; title?: unknown; body?: unknown } | null;
   const problem = checkDraft(body ?? {});

@@ -3,8 +3,10 @@ import "server-only";
 import type { Turn } from "@/lib/audio/types";
 import type { ReplyEvent } from "@/lib/evidence";
 import { evidenceFrom, rankEvidence, type Lookup } from "./evidence";
-import { GroqError, streamChatRound, type ChatEvent, type ChatMessage, type ToolCall } from "./groq";
-import { TOOLS, runTool } from "./tools";
+import type { Mode } from "./access";
+import { myLogin } from "./github";
+import { GroqError, streamChatRound, type ChatEvent, type ChatMessage, type PromptContext, type ToolCall } from "./groq";
+import { runTool, toolsFor } from "./tools";
 import { myRepos } from "./tools/listMyRepos";
 
 const MAX_ROUNDS = 4; // at most 3 tool calls, then the model must answer
@@ -19,7 +21,7 @@ const MAX_ROUNDS = 4; // at most 3 tool calls, then the model must answer
  * Each round, the model either answers (we pass its words on) or asks for a tool. Then we
  * run the tool, add the call and its result to the conversation, and ask again.
  */
-export async function* answerQuestion(conversation: Turn[], apiKey: string): AsyncGenerator<ReplyEvent> {
+export async function* answerQuestion(conversation: Turn[], apiKey: string, mode: Mode): AsyncGenerator<ReplyEvent> {
   const messages: ChatMessage[] = [...conversation];
   const lookups: Lookup[] = []; // the cards each tool produced, in the order they ran
   let answer = "";
@@ -27,8 +29,13 @@ export async function* answerQuestion(conversation: Turn[], apiKey: string): Asy
   const since = () => Math.round(performance.now() - started); // for the [timing] lines
   // Your repo names, for the system prompt (cached for 5 minutes, usually instant). If
   // GitHub can't be reached, the model falls back to calling list_my_repos itself.
-  const repos = (await myRepos().catch(() => [])).map((repo) => repo.name);
+  // In the demo, only public repos are named, and Relay talks about their owner by name.
+  const [repos, owner] = await Promise.all([
+    myRepos(mode).then((list) => list.map((repo) => repo.name), () => []),
+    mode === "demo" ? myLogin().catch(() => "the owner") : null,
+  ]);
   if (since() > 50) console.log(`[timing] repo list fetched: ${since()}ms`);
+  const prompt: PromptContext = { repos, demoOwner: owner };
 
   for (let round = 1; round <= MAX_ROUNDS; round++) {
     const lastRound = round === MAX_ROUNDS;
@@ -36,7 +43,8 @@ export async function* answerQuestion(conversation: Turn[], apiKey: string): Asy
     // `yield*` passes on every event from the round, then gives us its result.
     const { text, call, firstByte, firstText } = yield* oneRound(messages, apiKey, {
       toolChoice: lastRound ? "none" : "auto",
-      repos,
+      mode,
+      prompt,
       since,
     });
     answer += text;
@@ -49,7 +57,7 @@ export async function* answerQuestion(conversation: Turn[], apiKey: string): Asy
     );
     if (!call) break; // the model answered: done
 
-    const run = await runTool(call.name, call.arguments);
+    const run = await runTool(call.name, call.arguments, mode);
     yield { type: "step", ...run.step };
     // A drafted issue goes to the browser as a card. Nothing is created until you Confirm.
     if (call.name === "propose_issue" && run.step.ok) {
@@ -76,14 +84,19 @@ export async function* answerQuestion(conversation: Turn[], apiKey: string): Asy
 async function* oneRound(
   messages: ChatMessage[],
   apiKey: string,
-  { toolChoice, repos, since }: { toolChoice: "auto" | "none"; repos: string[]; since: () => number },
+  {
+    toolChoice,
+    mode,
+    prompt,
+    since,
+  }: { toolChoice: "auto" | "none"; mode: Mode; prompt: PromptContext; since: () => number },
 ): AsyncGenerator<ReplyEvent, { text: string; call: ToolCall | null; firstByte: number; firstText: number | null }> {
   for (let attempt = 1; ; attempt++) {
     let text = "";
     let call: ToolCall | null = null;
     let firstText: number | null = null;
     try {
-      const events = await streamChatRound(messages, apiKey, { tools: TOOLS, toolChoice, repos });
+      const events = await streamChatRound(messages, apiKey, { tools: toolsFor(mode), toolChoice, prompt });
       const firstByte = since(); // Groq answered (headers in); the stream follows
       for await (const event of eventsOf(events)) {
         if (event.type === "text") {

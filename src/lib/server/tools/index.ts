@@ -1,8 +1,9 @@
 import "server-only";
 
 import type { ToolStep } from "@/lib/evidence";
+import type { Mode } from "../access";
 import { GitHubError } from "../github";
-import { listMyRepos } from "./listMyRepos";
+import { isPublicRepo, listMyRepos } from "./listMyRepos";
 import { openIssues } from "./openIssues";
 import { proposeIssue } from "./proposeIssue";
 import { pullRequests } from "./pullRequests";
@@ -10,9 +11,13 @@ import { recentCommits } from "./recentCommits";
 import type { Tool, ToolResult } from "./types";
 
 const ALL: Tool[] = [listMyRepos, recentCommits, pullRequests, openIssues, proposeIssue];
+/** The demo is read-only: Relay can't even draft an issue there. */
+const DEMO: Tool[] = ALL.filter((tool) => tool !== proposeIssue);
+
+const toolList = (mode: Mode) => (mode === "demo" ? DEMO : ALL);
 
 /** The menu sent to the model with every question. */
-export const TOOLS = ALL.map((tool) => tool.definition);
+export const toolsFor = (mode: Mode) => toolList(mode).map((tool) => tool.definition);
 
 /** What the timeline says a tool did, e.g. "Checked commits in reviewpal". */
 const LABELS: Record<string, (repo: string) => string> = {
@@ -37,14 +42,14 @@ export interface ToolRun {
  * Mistakes the model can fix (unknown tool, bad input, repo not found) go back to it as
  * `{ error }`. Problems only you can fix (token, rate limit, GitHub down) are thrown.
  */
-export async function runTool(name: string, rawArgs: string): Promise<ToolRun> {
+export async function runTool(name: string, rawArgs: string, mode: Mode): Promise<ToolRun> {
   const started = performance.now();
   let args: Record<string, unknown> = {};
   let result: ToolResult;
   let notFound = false;
 
   try {
-    const tool = ALL.find((t) => t.definition.function.name === name);
+    const tool = toolList(mode).find((t) => t.definition.function.name === name);
     const parsed = JSON.parse(rawArgs || "{}") as unknown;
     if (!tool) {
       result = { error: `There is no tool called ${name}.` };
@@ -52,7 +57,12 @@ export async function runTool(name: string, rawArgs: string): Promise<ToolRun> {
       result = { error: "Tool inputs must be a JSON object." };
     } else {
       args = parsed as Record<string, unknown>;
-      result = await tool.run(args);
+      // Demo: public repos only. A private one gets the same answer as a missing one, so
+      // the demo doesn't even reveal that it exists.
+      if (mode === "demo" && "repo" in args && !(await isPublicRepo(args.repo))) {
+        throw new GitHubError("not-found", "private repo in the demo");
+      }
+      result = await tool.run(args, { mode });
     }
   } catch (error) {
     if (error instanceof SyntaxError) {

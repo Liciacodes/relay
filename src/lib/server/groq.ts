@@ -17,7 +17,15 @@ export const TTS_MAX_CHARS = 200; // Orpheus rejects longer input
 // on each request, so "this week" can become a real date for the tools. So are the user's
 // repo names (when known): the model can then pick a repo without an extra round of
 // list_my_repos, and fix names the speech recognition misheard ("ReviewPol" → reviewpal).
-function systemPrompt(repos: string[]): string {
+/** What the system prompt needs to know about this request. */
+export interface PromptContext {
+  /** Repo names, newest first (public ones only in the demo). */
+  repos: string[];
+  /** In the public demo: the GitHub login whose work this is. null in full mode. */
+  demoOwner: string | null;
+}
+
+function systemPrompt({ repos, demoOwner }: PromptContext): string {
   const now = new Date();
   const weekday = now.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
   const today = `${weekday}, ${now.toISOString().slice(0, 10)}`;
@@ -35,7 +43,12 @@ function systemPrompt(repos: string[]): string {
 
 What you cover:
 - Only the user's GitHub work: their repositories, commits, pull requests and issues.
-- You can draft a new issue, but never create one. When the user asks for an issue, call propose_issue with a short title and a body made only from what they said. Then say the result's "say" sentence, like "I've drafted an issue for relay. Check it and press Confirm." Never say an issue was created or opened: only the user's Confirm button does that.
+${
+    demoOwner
+      ? `- This is a public demo. The person talking is a visitor, not the owner: all the GitHub work here belongs to ${demoOwner}. Talk about it in the third person ("${demoOwner} made three commits"), and read "I", "my" and "me" in questions as ${demoOwner}.
+- Creating or drafting issues is turned off in this demo. If asked, say so in one short sentence.`
+      : `- You can draft a new issue, but never create one. When the user asks for an issue, call propose_issue with a short title and a body made only from what they said. Then say the result's "say" sentence, like "I've drafted an issue for relay. Check it and press Confirm." Never say an issue was created or opened: only the user's Confirm button does that.`
+  }
 - Only when a question is NOT about their GitHub work (weather, news, general questions), say in one short sentence that you only cover their GitHub work, then suggest one GitHub question, like "Try asking what changed in your repos this week." Never add that suggestion to a GitHub answer.
 
 Facts:
@@ -143,14 +156,14 @@ export type ChatEvent = { type: "text"; text: string } | { type: "tool-call"; ca
 export async function streamChatRound(
   messages: ChatMessage[],
   apiKey: string,
-  options: { tools: ToolDefinition[]; toolChoice: "auto" | "none"; repos: string[] },
+  options: { tools: ToolDefinition[]; toolChoice: "auto" | "none"; prompt: PromptContext },
 ): Promise<ReadableStream<ChatEvent>> {
   const response = await groqFetch("/chat/completions", apiKey, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: CHAT_MODEL,
-      messages: [{ role: "system", content: systemPrompt(options.repos) }, ...messages],
+      messages: [{ role: "system", content: systemPrompt(options.prompt) }, ...messages],
       tools: options.tools,
       tool_choice: options.toolChoice,
       stream: true,

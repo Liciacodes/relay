@@ -6,6 +6,7 @@ import { usePushToTalk } from "@/hooks/usePushToTalk";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { DraftCard } from "./DraftCard";
 import { EvidenceList } from "./EvidenceList";
+import { ModeBar } from "./ModeBar";
 import { Orb, type OrbMode } from "./Orb";
 import { OrbStage } from "./OrbStage";
 import { Reply } from "./Reply";
@@ -26,6 +27,8 @@ export function VoiceConsole() {
     evidence,
     interrupted,
     draft,
+    access,
+    setAccess,
     start,
     stop,
     silence,
@@ -67,6 +70,7 @@ export function VoiceConsole() {
 
   return (
     <div className="flex w-full flex-1 flex-col items-center">
+      {access && <ModeBar access={access} onChange={setAccess} />}
       <div className="flex flex-1 flex-col items-center justify-center gap-[clamp(1rem,4dvh,2rem)] py-4">
         <OrbStage
           live={recording}

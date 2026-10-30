@@ -26,6 +26,7 @@ the files touched. Prefer small, readable code over clever code. Introduce new c
 - **Day 5 (done): act safely, interrupt.** `propose_issue` only drafts; a draft card
   (Confirm / Cancel) creates the issue via `/api/issues` only on Confirm. Holding to talk
   (Space or button) while Relay thinks or speaks cuts it off; Escape just stops it.
+- **Hosting (done):** public demo + owner password, ready for Vercel.
 - **Day 6 (part 1, done): speed.** Measured every stage (`[timing]` lines on the server,
   `window.__relayTimings` in the browser); repo names cached and put in the prompt and
   Whisper's hint; long first sentences cut early. First sound 5.8s → 4.3s on average.
@@ -49,9 +50,13 @@ Note: with Cache Components, route files must not export `runtime`.
     write in the app**, called only by the draft card's Confirm. Re-checks everything
     (`checkDraft`, JSON content type, same-origin `Origin`).
   - `speak/`: `{ text }` (≤ 200 chars) → `audio/wav` (Orpheus).
-  - `warm/`: POST on page load → 204. Starts filling the repo-list cache, so the first
-    question already gets Whisper's spelling hint.
+  - `warm/`: POST on page load → `{ mode, owner, canUnlock }`. Also starts filling the
+    repo-list cache, so the first question already gets Whisper's spelling hint.
+  - `unlock/`: POST `{ password }` → signed HttpOnly cookie (full mode, 30 days; 5 tries per
+    15 min); DELETE → back to the demo.
 - `src/lib/server/`: server-only code (imports `server-only`). Secrets are used only here.
+  `access.ts` (`modeOf(request)` → `"demo" | "full"`, cookie signing, `visitorOf` = hashed IP),
+  `limits.ts` (`LIMITS` + `take()`: daily counters in Upstash Redis, in memory locally),
   `groq.ts` (all Groq calls, model IDs, system prompt, SSE parsing incl. tool-call pieces,
   WAV header fix), `answer.ts` (the tool loop: async generator, ≤ 4 rounds, last one
   `tool_choice: "none"`), `github.ts` (`githubGet` GET-only, `GitHubError`, `repoPath`,
@@ -87,6 +92,12 @@ Note: with Cache Components, route files must not export `runtime`.
   directly). The talk controls are `sticky bottom-0`.
 
 ## Rules
+
+- **Two modes online.** `demo` (anyone, no login): public repos only, read-only (no
+  `propose_issue`, `/api/issues` refuses), daily limits in `limits.ts`, Relay talks about the
+  owner in the third person. `full`: the owner after `RELAY_PASSWORD`. Every demo rule is
+  enforced on the server (`modeOf` in each route, `runTool(…, mode)` checks repo visibility);
+  the page's `ModeBar` only displays the mode. No password set: full locally, demo in production.
 
 - **Secrets stay server-side.** Never prefix a secret with `NEXT_PUBLIC_`; never import
   `src/lib/server/*` from a client component.

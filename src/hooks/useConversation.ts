@@ -82,6 +82,18 @@ interface Answering {
   text: string;
 }
 
+/**
+ * Which version of Relay this is. "demo": anyone, public repos, read-only, daily limits.
+ * "full": the owner, after the password. The server enforces it; this is for display.
+ */
+export interface Access {
+  mode: "demo" | "full";
+  /** Whose GitHub this is, e.g. "Liciacodes". */
+  owner: string | null;
+  /** False when no password is set up, so there's nothing to unlock. */
+  canUnlock: boolean;
+}
+
 /** The draft card's state. Nothing exists on GitHub until Confirm succeeds. */
 export type DraftState = IssueDraft & { status: "ready" | "creating" | "failed"; error?: string };
 
@@ -102,6 +114,8 @@ export function useConversation() {
   const [interrupted, setInterrupted] = useState(false);
   /** An issue Relay drafted, waiting for your Confirm or Cancel. */
   const [draft, setDraft] = useState<DraftState | null>(null);
+  /** Public demo or full mode (null until the server has said). */
+  const [access, setAccess] = useState<Access | null>(null);
 
   const phase = useRef<Phase>("idle");
   /**
@@ -432,9 +446,12 @@ export function useConversation() {
   }, [updateDraft]);
 
   // On page load, have the server fetch your repo list, so the first question already gets
-  // the spelling hint ("reviewpal", not "ReviewPol"). Fire and forget.
+  // the spelling hint ("reviewpal", not "ReviewPol"). The answer says which mode we're in.
   useEffect(() => {
-    void fetch("/api/warm", { method: "POST" }).catch(() => {});
+    fetch("/api/warm", { method: "POST" })
+      .then((response) => (response.ok ? (response.json() as Promise<Access>) : null))
+      .then((value) => value && setAccess(value))
+      .catch(() => {});
   }, []);
 
   // If the page goes away mid-turn, free the mic and go quiet.
@@ -456,6 +473,8 @@ export function useConversation() {
     evidence,
     interrupted,
     draft,
+    access,
+    setAccess,
     start,
     stop,
     silence,

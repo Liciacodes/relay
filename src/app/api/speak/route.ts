@@ -2,6 +2,8 @@
 // Turns one chunk of the answer (max 200 characters) into WAV audio with Groq's Orpheus voice.
 
 import { TTS_MAX_CHARS, synthesizeSpeech } from "@/lib/server/groq";
+import { modeOf } from "@/lib/server/access";
+import { LIMITS, take } from "@/lib/server/limits";
 import { fail, groqFailure, requireApiKey } from "@/lib/server/respond";
 
 export async function POST(request: Request) {
@@ -14,6 +16,12 @@ export async function POST(request: Request) {
 
   const key = requireApiKey();
   if ("response" in key) return key.response;
+
+  // Demo: a daily number of Orpheus clips for all visitors together. After that this says
+  // "rate limited", and the browser's own voice reads the answer instead.
+  if (modeOf(request) === "demo" && !(await take("voice:all", LIMITS.voiceClipsTotal))) {
+    return fail(429, "rate-limited", "The demo's voice limit for today was reached.");
+  }
 
   try {
     const started = performance.now();

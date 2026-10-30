@@ -3,6 +3,8 @@
 // (No `export const runtime`: with Cache Components on, Next.js always uses Node here.)
 
 import { transcribeWithGroq } from "@/lib/server/groq";
+import { modeOf, visitorOf } from "@/lib/server/access";
+import { LIMITS, take } from "@/lib/server/limits";
 import { fail, groqFailure, requireApiKey } from "@/lib/server/respond";
 import { cachedRepoNames, myRepos } from "@/lib/server/tools/listMyRepos";
 import type { TranscribeResponse } from "@/lib/audio/errors";
@@ -28,11 +30,23 @@ export async function POST(request: Request) {
   const key = requireApiKey();
   if ("response" in key) return key.response;
 
+  // The public demo has daily limits, so visitors can't use up the free Groq quota.
+  const mode = modeOf(request);
+  if (
+    mode === "demo" &&
+    !(
+      (await take(`t:${visitorOf(request)}`, LIMITS.transcriptionsPerVisitor)) &&
+      (await take("t:all", LIMITS.transcriptionsTotal))
+    )
+  ) {
+    return fail(429, "demo-limit");
+  }
+
   // Your repo names help Whisper spell them ("reviewpal", not "ReviewPol"). Only names
   // already cached are used, so this never waits for GitHub; the call below fills the cache
   // while Whisper works, ready for /api/reply a moment later.
-  const repos = cachedRepoNames();
-  void myRepos().catch(() => {});
+  const repos = cachedRepoNames(mode); // public names only in the demo
+  void myRepos(mode).catch(() => {});
   const hint = repos.length > 0 ? `GitHub repositories: ${repos.join(", ")}.` : undefined;
 
   try {

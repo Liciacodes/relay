@@ -15,6 +15,7 @@ export type VoiceErrorCode =
   | "github-rate-limited" // GitHub said "too many requests"
   | "github-permission" // the token may read but not create issues there
   | "github-not-found" // the repo doesn't exist, or the token can't see it
+  | "demo-limit" // the public demo's daily limit was reached
   | "server"; // anything else that went wrong on our server
 
 const MESSAGES: Record<VoiceErrorCode, string> = {
@@ -33,6 +34,7 @@ const MESSAGES: Record<VoiceErrorCode, string> = {
   "github-rate-limited": "GitHub's usage limit was reached. Try again in a few minutes.",
   "github-permission": "Your GitHub token isn't allowed to create issues in this repo.",
   "github-not-found": "Couldn't find that repo, or your token can't see it.",
+  "demo-limit": "The demo's daily limit is reached. Try again tomorrow.",
   server: "Something went wrong on the server. Try again in a moment.",
 };
 

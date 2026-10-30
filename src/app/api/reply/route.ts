@@ -5,7 +5,9 @@
 
 import type { Turn } from "@/lib/audio/types";
 import type { ReplyEvent } from "@/lib/evidence";
+import { modeOf, visitorOf } from "@/lib/server/access";
 import { answerQuestion } from "@/lib/server/answer";
+import { LIMITS, take } from "@/lib/server/limits";
 import { describeReplyFailure, fail, requireApiKey } from "@/lib/server/respond";
 
 const MAX_TEXT = 2_000;
@@ -35,7 +37,16 @@ export async function POST(request: Request) {
   const key = requireApiKey();
   if ("response" in key) return key.response;
 
-  const events = answerQuestion([...history, { role: "user", content: text }], key.apiKey);
+  // The public demo has daily limits, so visitors can't use up the free Groq quota.
+  const mode = modeOf(request);
+  if (
+    mode === "demo" &&
+    !((await take(`q:${visitorOf(request)}`, LIMITS.questionsPerVisitor)) && (await take("q:all", LIMITS.questionsTotal)))
+  ) {
+    return fail(429, "demo-limit");
+  }
+
+  const events = answerQuestion([...history, { role: "user", content: text }], key.apiKey, mode);
 
   // Stream NDJSON: each event becomes one line of JSON. The response starts right away,
   // so tool steps reach the browser live, while it still shows "Thinking".
