@@ -4,6 +4,7 @@
 
 import { transcribeWithGroq } from "@/lib/server/groq";
 import { modeOf, visitorOf } from "@/lib/server/access";
+import { cachedLogin, myLogin } from "@/lib/server/github";
 import { LIMITS, take } from "@/lib/server/limits";
 import { fail, groqFailure, requireApiKey } from "@/lib/server/respond";
 import { cachedRepoNames, myRepos } from "@/lib/server/tools/listMyRepos";
@@ -42,12 +43,17 @@ export async function POST(request: Request) {
     return fail(429, "demo-limit");
   }
 
-  // Your repo names help Whisper spell them ("reviewpal", not "ReviewPol"). Only names
-  // already cached are used, so this never waits for GitHub; the call below fills the cache
-  // while Whisper works, ready for /api/reply a moment later.
+  // Your username and repo names help Whisper spell them ("Liciacodes", not "Leisha codes";
+  // "reviewpal", not "ReviewPol"). Only names already cached are used, so this never waits
+  // for GitHub; the calls below fill the caches while Whisper works.
+  const login = cachedLogin();
   const repos = cachedRepoNames(mode); // public names only in the demo
+  void myLogin().catch(() => {});
   void myRepos(mode).catch(() => {});
-  const hint = repos.length > 0 ? `GitHub repositories: ${repos.join(", ")}.` : undefined;
+  const hint =
+    [login && `GitHub user: ${login}.`, repos.length > 0 && `GitHub repositories: ${repos.join(", ")}.`]
+      .filter(Boolean)
+      .join(" ") || undefined;
 
   try {
     const started = performance.now();

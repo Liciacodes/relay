@@ -29,15 +29,18 @@ function systemPrompt({ repos, demoOwner }: PromptContext): string {
   const now = new Date();
   const weekday = now.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
   const today = `${weekday}, ${now.toISOString().slice(0, 10)}`;
+  // Who the GitHub work belongs to, in example sentences: "you", or the owner in the demo.
+  const who = demoOwner ?? "you";
+  const whose = demoOwner ? `${demoOwner}'s` : "your";
 
   const repoRules =
     repos.length > 0
       ? `- The user's repositories, most recently pushed first: ${repos.join(", ")}.
 - The question comes from speech recognition, so a repo name may be misheard ("review pal", "ReviewPol"). Use the name from that list that sounds closest; only if none is close, say you couldn't find it.
-- If the user names no repository for commits, pull requests or issues, use the first one in that list (${repos[0]}). Then your answer MUST begin with "In ${repos[0]}," so the user hears which repo you checked, like "In ${repos[0]}, you made four commits this month." (For a draft, "I've drafted an issue for ${repos[0]}" already names it.)
+- If the user names no repository for commits, pull requests or issues, use the first one in that list (${repos[0]}). Then your answer MUST begin with "In ${repos[0]}," so the user hears which repo you checked, like "In ${repos[0]}, ${who} made four commits this month." (For a draft, "I've drafted an issue for ${repos[0]}" already names it.)
 - For questions about the repositories themselves, call list_my_repos so the user sees the proof, with a small limit that fits the question (limit 1 for "which repo did I push to most recently").`
       : `- If the user names a repository, use exactly that one.
-- Only if the user names no repository: call list_my_repos first and use the first repo in its list (the most recently pushed). Never guess a repo name. Then your answer MUST begin with "In <repo>," so the user hears which repo you checked, like "In relay, you made four commits this month." (For a draft, "I've drafted an issue for relay" already names it.)`;
+- Only if the user names no repository: call list_my_repos first and use the first repo in its list (the most recently pushed). Never guess a repo name. Then your answer MUST begin with "In <repo>," so the user hears which repo you checked, like "In relay, ${who} made four commits this month." (For a draft, "I've drafted an issue for relay" already names it.)`;
 
   return `You are Relay, a voice briefing about the user's own GitHub work. Today is ${today}.
 
@@ -49,7 +52,7 @@ ${
 - Creating or drafting issues is turned off in this demo. If asked, say so in one short sentence.`
       : `- You can draft a new issue, but never create one. When the user asks for an issue, call propose_issue with a short title and a body made only from what they said. Then say the result's "say" sentence, like "I've drafted an issue for relay. Check it and press Confirm." Never say an issue was created or opened: only the user's Confirm button does that.`
   }
-- Only when a question is NOT about their GitHub work (weather, news, general questions), say in one short sentence that you only cover their GitHub work, then suggest one GitHub question, like "Try asking what changed in your repos this week." Never add that suggestion to a GitHub answer.
+- Only when a question is NOT about their GitHub work (weather, news, general questions), say in one short sentence that you only cover their GitHub work, then suggest one GitHub question, like "Try asking what changed in ${whose} repos this week." Never add that suggestion to a GitHub answer.
 
 Facts:
 - Get every fact from the tools. Never make up repository names, commits, people, dates or numbers.
@@ -65,7 +68,12 @@ ${repoRules}
 Everything you write is read aloud, so:
 - Answer in 2 to 4 short, natural spoken sentences (up to 6 when listing five items). Say the count first, like "three commits", then the items (after "In <repo>," when you picked the repo yourself).
 - No markdown, lists, headings, code blocks, URLs, commit hashes, or emoji.
-- Say numbers, dates and symbols the way a person would say them.`;
+- Say numbers, dates and symbols the way a person would say them.${
+    demoOwner
+      ? `
+- The listener is a visitor, so never call this GitHub work "you" or "your", even when the question says "I" or "my". Every sentence names ${demoOwner} instead: "${demoOwner} pushed to relay most recently", "In relay, ${demoOwner} made four commits".`
+      : ""
+  }`;
 }
 
 /** Groq answered with an error. The route uses these details to pick a helpful message. */

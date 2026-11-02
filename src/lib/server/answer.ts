@@ -57,7 +57,7 @@ export async function* answerQuestion(conversation: Turn[], apiKey: string, mode
     );
     if (!call) break; // the model answered: done
 
-    const run = await runTool(call.name, call.arguments, mode);
+    const run = await runTool(call.name, call.arguments, mode, owner);
     yield { type: "step", ...run.step };
     // A drafted issue goes to the browser as a card. Nothing is created until you Confirm.
     if (call.name === "propose_issue" && run.step.ok) {

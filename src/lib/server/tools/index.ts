@@ -20,8 +20,8 @@ const toolList = (mode: Mode) => (mode === "demo" ? DEMO : ALL);
 export const toolsFor = (mode: Mode) => toolList(mode).map((tool) => tool.definition);
 
 /** What the timeline says a tool did, e.g. "Checked commits in reviewpal". */
-const LABELS: Record<string, (repo: string) => string> = {
-  list_my_repos: () => "Listed your repos",
+const LABELS: Record<string, (repo: string, owner: string | null) => string> = {
+  list_my_repos: (_, owner) => (owner ? `Listed ${owner}'s repos` : "Listed your repos"),
   recent_commits: (repo) => `Checked commits in ${repo}`,
   pull_requests: (repo) => `Checked pull requests in ${repo}`,
   open_issues: (repo) => `Checked open issues in ${repo}`,
@@ -41,8 +41,9 @@ export interface ToolRun {
  * Run the tool the model asked for.
  * Mistakes the model can fix (unknown tool, bad input, repo not found) go back to it as
  * `{ error }`. Problems only you can fix (token, rate limit, GitHub down) are thrown.
+ * `owner` is set in the demo, so the timeline says "Liciacodes's repos", not "your repos".
  */
-export async function runTool(name: string, rawArgs: string, mode: Mode): Promise<ToolRun> {
+export async function runTool(name: string, rawArgs: string, mode: Mode, owner: string | null = null): Promise<ToolRun> {
   const started = performance.now();
   let args: Record<string, unknown> = {};
   let result: ToolResult;
@@ -80,7 +81,7 @@ export async function runTool(name: string, rawArgs: string, mode: Mode): Promis
   const repo = typeof args.repo === "string" ? args.repo.trim().slice(0, 60) : "a repo";
   const label = notFound
     ? `Couldn't find ${repo}`
-    : (LABELS[name]?.(repo) ?? `Ran ${name}`) + (ok ? "" : " (failed)");
+    : (LABELS[name]?.(repo, owner) ?? `Ran ${name}`) + (ok ? "" : " (failed)");
 
   // So you can watch what the model asked for, in the terminal running `npm run dev`.
   const outcome = ok ? `${String(result.count)} items` : `error: ${String(result.error)}`;

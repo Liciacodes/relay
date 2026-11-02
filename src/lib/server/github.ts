@@ -79,15 +79,19 @@ export function githubErrorFrom(response: Response, path: string): GitHubError {
 }
 
 let login: Promise<string> | null = null;
+let knownLogin: string | null = null; // filled in once GitHub has answered
 
 /** The username that owns GITHUB_TOKEN. Asked once, then remembered. */
 export function myLogin(): Promise<string> {
   if (!login) {
-    login = githubGet<{ login: string }>("/user").then((user) => user.login);
+    login = githubGet<{ login: string }>("/user").then((user) => (knownLogin = user.login));
     login.catch(() => (login = null)); // a failure shouldn't be remembered
   }
   return login;
 }
+
+/** The username, only if already known: never waits for GitHub. */
+export const cachedLogin = () => knownLogin;
 
 const REPO_NAME = /^[\w.-]+(\/[\w.-]+)?$/;
 
