@@ -69,7 +69,7 @@ export const recentCommits: Tool = {
       note: "Each item is exactly one commit, even when its message lists several changes.",
       commits: listed.map((c, index) => ({
         n: index + 1,
-        sha: c.sha.slice(0, 7),
+        // No hash here: the model read it aloud. The card takes it from the url instead.
         message: short(c.commit.message),
         author: c.author?.login ?? c.commit.author?.name ?? "unknown",
         date: c.commit.author?.date,

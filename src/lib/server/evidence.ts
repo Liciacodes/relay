@@ -7,7 +7,7 @@ const MAX_CARDS = 6;
 
 // The item shapes our tools return (see tools/*.ts). Every item carries its `url`.
 interface RepoItem { name: string; fullName: string; lastPush: string; url: string }
-interface CommitItem { sha: string; message: string; date?: string; url: string }
+interface CommitItem { message: string; date?: string; url: string }
 interface PullItem { number: number; title: string; opened: string; merged?: string; url: string }
 interface IssueItem { number: number; title: string; opened: string; url: string }
 
@@ -34,7 +34,7 @@ export function evidenceFrom(toolName: string, result: ToolResult): Evidence[] {
         date: c.date ?? "",
         dateLabel: "Committed",
         url: c.url,
-        sha: c.sha,
+        sha: c.url.split("/").pop()?.slice(0, 7), // the url ends in the commit's hash
       }));
     case "pull_requests":
       return ((result.pullRequests ?? []) as PullItem[]).map((pr) => ({

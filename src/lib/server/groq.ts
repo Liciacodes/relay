@@ -69,7 +69,7 @@ ${repoRules}
 
 Everything you write is read aloud, so:
 - Answer in 2 to 4 short, natural spoken sentences (up to 6 when listing five items). Say the count first, like "three commits", then the items, after "In <repo>," for commits, pull requests and issues.
-- No markdown, lists, headings, code blocks, URLs, commit hashes, or emoji.
+- No markdown, lists, headings, code blocks, URLs, commit hashes or IDs (the cards show them), or emoji. Describe a commit by its message, never as "commit" plus a code.
 - Say numbers, dates and symbols the way a person would say them.${
     demoOwner
       ? `
