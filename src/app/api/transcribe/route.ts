@@ -43,11 +43,9 @@ export async function POST(request: Request) {
     return fail(429, "demo-limit");
   }
 
-  // Your username and repo names help Whisper spell them ("Liciacodes", not "Leisha codes";
-  // "reviewpal", not "ReviewPol"). Only names already cached are used, so this never waits
-  // for GitHub; the calls below fill the caches while Whisper works.
+
   const login = cachedLogin();
-  const repos = cachedRepoNames(mode); // public names only in the demo
+  const repos = cachedRepoNames(mode); 
   void myLogin().catch(() => {});
   void myRepos(mode).catch(() => {});
   const hint =

@@ -63,8 +63,9 @@ Note: with Cache Components, route files must not export `runtime`.
   `short`, `clampLimit`, plus `githubHeaders`/`githubErrorFrom` shared with the issues
   route), `tools/` (one file per tool exporting `{ definition, run }`,
   `index.ts` = `TOOLS` + `runTool`, which also times each tool and labels its step;
-  `listMyRepos.ts` also holds `myRepos()`, the repo list cached for 5 minutes, and
-  `cachedRepoNames()`, which never waits),
+  `listMyRepos.ts` also holds `myRepos()`, the repo list cached for 5 minutes,
+  `cachedRepoNames()`, which never waits, and `defaultBranch()`, which `recent_commits`
+  returns as `branch` so answers start "In relay, on main since yesterday, …"),
   `evidence.ts` (`evidenceFrom` tool result → cards, `rankEvidence`: mentioned in the answer
   first, then last lookup first, deduped, max 6), `respond.ts` (`fail()`, `requireApiKey()`,
   `describeReplyFailure()`, `groqFailure()`, `issueFailure()` error mapping).
@@ -73,7 +74,8 @@ Note: with Cache Components, route files must not export `runtime`.
   `player.ts` (gapless playback on one AudioContext, unlocked on press),
   `errors.ts` (error codes, messages, `errorFromResponse`), `types.ts`.
 - `src/lib/speech/`: `chunker.ts` (first sentence alone, cut at its first comma after 40
-  characters if it's over 60; then ≤ 200-char packs),
+  characters if it's over 60; then ≤ 200-char packs; `withoutHashes` takes commit hashes
+  out of every piece, so the voice never reads one),
   `speaker.ts` (fetches + plays chunks in order, falls back to the browser voice;
   `cancel()` stops for good when interrupted),
   `browserVoice.ts` (speechSynthesis + simulated levels).
@@ -113,7 +115,8 @@ Note: with Cache Components, route files must not export `runtime`.
   the only write is `POST /api/issues`, after the user clicks Confirm. The model can only
   draft (`propose_issue`); never give it a tool that writes.
   Tool results stay small (≤ 20 items, text cut by `short()`) and every item has a `url`
-  (Day 4's evidence). Mistakes the model can fix (bad input, repo not found) go back to it
+  (Day 4's evidence). The model gets each result without its urls (`forModel` in
+  `tools/index.ts`): a commit's url ends in its hash. Mistakes the model can fix (bad input, repo not found) go back to it
   as `{ error }`; token/rate-limit/outage errors are thrown and shown to the user.
 - gpt-oss makes one tool call at a time (no parallel calls). Temperature stays ≤ 0.5.
 - Watch `[tool] …` lines in the dev terminal to see what the model asked for, and

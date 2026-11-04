@@ -13,6 +13,7 @@ interface GitHubRepo {
   language: string | null;
   pushed_at: string;
   html_url: string;
+  default_branch: string;
 }
 
 const CACHE_MS = 5 * 60_000; // your repo list rarely changes; 5 minutes is fresh enough
@@ -53,23 +54,41 @@ export function cachedRepoNames(mode: Mode): string[] {
   return fresh() && cache!.list ? visible(cache!.list, mode).map((repo) => repo.name) : [];
 }
 
-const visibility = new Map<string, { at: number; isPublic: boolean }>();
+/** What the tools need to know about one repo. */
+interface RepoInfo {
+  isPublic: boolean;
+  /** The branch GitHub shows first, usually "main". */
+  defaultBranch: string;
+}
+
+const otherRepos = new Map<string, { at: number; info: RepoInfo }>();
 
 /**
- * Is this repo public? Your own recent repos are checked in the cached list; any other
- * repo is asked from GitHub once (a GET) and remembered for 5 minutes.
+ * Your own recent repos are found in the cached list; any other repo is asked from GitHub
+ * once (a GET) and remembered for 5 minutes.
  */
-export async function isPublicRepo(repo: unknown): Promise<boolean> {
+async function repoInfo(repo: unknown): Promise<RepoInfo> {
   const { fullName, path } = await repoPath(repo);
   const key = fullName.toLowerCase();
   const own = (await allRepos()).find((r) => r.full_name.toLowerCase() === key);
-  if (own) return !own.private;
+  if (own) return { isPublic: !own.private, defaultBranch: own.default_branch };
 
-  const known = visibility.get(key);
-  if (known && Date.now() - known.at < CACHE_MS) return known.isPublic;
-  const { private: isPrivate } = await githubGet<{ private: boolean }>(path);
-  visibility.set(key, { at: Date.now(), isPublic: !isPrivate });
-  return !isPrivate;
+  const known = otherRepos.get(key);
+  if (known && Date.now() - known.at < CACHE_MS) return known.info;
+  const found = await githubGet<{ private: boolean; default_branch: string }>(path);
+  const info = { isPublic: !found.private, defaultBranch: found.default_branch };
+  otherRepos.set(key, { at: Date.now(), info });
+  return info;
+}
+
+/** Is this repo public? The demo only works with public repos. */
+export async function isPublicRepo(repo: unknown): Promise<boolean> {
+  return (await repoInfo(repo)).isPublic;
+}
+
+/** The repo's default branch, like "main": the one recent_commits reads. */
+export async function defaultBranch(repo: unknown): Promise<string> {
+  return (await repoInfo(repo)).defaultBranch;
 }
 
 export const listMyRepos: Tool = {

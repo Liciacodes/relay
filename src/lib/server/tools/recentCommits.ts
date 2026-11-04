@@ -1,6 +1,7 @@
 import "server-only";
 
 import { GitHubError, clampLimit, githubGet, repoPath, short } from "../github";
+import { defaultBranch } from "./listMyRepos";
 import type { Tool } from "./types";
 
 interface GitHubCommit {
@@ -18,7 +19,7 @@ export const recentCommits: Tool = {
     type: "function",
     function: {
       name: "recent_commits",
-      description: "Recent commits on a repository's default branch, newest first.",
+      description: "Recent commits on a repository's default branch (named in the result), newest first.",
       parameters: {
         type: "object",
         properties: {
@@ -41,12 +42,17 @@ export const recentCommits: Tool = {
       params.since = `${args.since}T00:00:00Z`;
     }
 
+    // GitHub reads the default branch when we don't name one. Its name lets the answer
+    // start with what was checked: "In relay, on main since yesterday, …".
+    // Usually instant: your own repos' branches are in the cached repo list.
+    const branch = await defaultBranch(fullName);
+
     let commits: GitHubCommit[];
     try {
       commits = await githubGet<GitHubCommit[]>(`${path}/commits`, params);
     } catch (error) {
       // GitHub answers 409 for a repo with no commits yet.
-      if (error instanceof GitHubError && error.status === 409) return { repo: fullName, count: 0, commits: [] };
+      if (error instanceof GitHubError && error.status === 409) return { repo: fullName, branch, count: 0, commits: [] };
       throw error;
     }
 
@@ -60,6 +66,7 @@ export const recentCommits: Tool = {
     const listed = commits.slice(0, LISTED_MAX);
     return {
       repo: fullName,
+      branch,
       count: cutOff ? `${limit} or more` : commits.length,
       ...(cutOff && { sayCount: `at least ${limit}` }),
       ...(listed.length < commits.length && {

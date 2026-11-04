@@ -29,13 +29,21 @@ const LABELS: Record<string, (repo: string, owner: string | null) => string> = {
 };
 
 export interface ToolRun {
-  /** The result as JSON text, sent back to the model. */
+  /** The result as JSON text, sent back to the model (without urls: see `forModel`). */
   json: string;
   /** The same result as an object, for the evidence cards. */
   result: ToolResult;
   /** For the timeline: what happened and how long it took. */
   step: ToolStep;
 }
+
+/**
+ * The result as JSON text for the model, without any `url`. The model never says links
+ * (the cards show them), and a commit's url ends in its hash, which it used to read aloud.
+ * The second argument is a "replacer": JSON.stringify calls it for every key, and
+ * returning `undefined` leaves that key out.
+ */
+const forModel = (result: ToolResult) => JSON.stringify(result, (key, value) => (key === "url" ? undefined : value));
 
 /**
  * Run the tool the model asked for.
@@ -87,5 +95,5 @@ export async function runTool(name: string, rawArgs: string, mode: Mode, owner: 
   const outcome = ok ? `${String(result.count)} items` : `error: ${String(result.error)}`;
   console.log(`[tool] ${name} ${rawArgs || "{}"} → ${outcome} (${ms}ms)`);
 
-  return { json: JSON.stringify(result), result, step: { label, ms, ok } };
+  return { json: forModel(result), result, step: { label, ms, ok } };
 }

@@ -6,6 +6,8 @@
 //    (Measured: Orpheus needs ~0.5–1s for a short sentence, ~2.4s for 170 characters.)
 // 2. Later sentences are packed together, up to MAX_CHUNK characters per piece.
 // 3. A single sentence longer than MAX_CHUNK is split at a comma or space.
+//
+// Commit hashes are never spoken: `withoutHashes` takes them out of every piece.
 
 export const MAX_CHUNK = 200; // Groq Orpheus accepts at most 200 characters
 const FIRST_MIN = 40; // a first chunk shorter than this is never cut
@@ -42,6 +44,22 @@ export function splitLong(text: string): string[] {
   return pieces;
 }
 
+// A commit hash, like "a1b2c3d" or all 40 characters: one word (`\b` = the edge of a word)
+// of 7 or more characters, only 0-9 and a-f. The space before it goes too, and quotes or
+// brackets around it, so "Merge commit 'a1b2c3d' into main" becomes "Merge commit into main".
+const HEX_WORD = / ?["'(]?\b[0-9a-f]{7,}\b["')]?/gi;
+/** A real hash mixes digits and letters, so "1500000" and words like "defaced" stay. */
+const isHash = (word: string) => /\d/.test(word) && /[a-f]/i.test(word);
+
+/**
+ * The text without commit hashes. The model is told never to say them, and no longer sees
+ * them in tool results, but one can still hide in a commit message ("Merge commit 'a1b2c3d'").
+ * The evidence cards show the hashes; the voice skips them.
+ */
+export function withoutHashes(text: string): string {
+  return text.replace(HEX_WORD, (match) => (isHash(match) ? "" : match));
+}
+
 export interface SpeechChunker {
   /** Feed the next piece of streamed text. */
   push(text: string): void;
@@ -54,8 +72,10 @@ export function createSpeechChunker(onChunk: (chunk: string) => void): SpeechChu
   let packed = ""; // complete sentences waiting to be sent together
   let sentFirst = false;
 
+  // Every piece leaves through here, so this is where hashes are taken out.
   const send = (text: string) => {
-    if (text.trim()) onChunk(text.trim());
+    const spoken = withoutHashes(text).trim();
+    if (spoken) onChunk(spoken);
   };
 
   const addSentence = (sentence: string) => {
